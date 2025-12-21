@@ -185,3 +185,63 @@ Create a sleek, Clay.com-like experience for enrichment and search with real-tim
 
 ### Deployment
 - Successfully deployed to https://signal-mentis.vercel.app
+
+---
+
+## UK Government Data Sources Integration (December 2024)
+
+### Goal
+Add free UK Government APIs as data sources for automatic signal detection.
+
+### Sources Added
+
+**1. Contracts Finder API** (FREE)
+- Fetches UK public sector contract awards
+- OCDS format (Open Contracting Data Standard)
+- Signal type: `contract_awarded`
+- File: `src/lib/contracts-finder.ts`
+
+**2. Find a Tender Service API** (FREE)
+- Fetches high-value UK contracts (>£118,000)
+- Replaced EU TED for UK post-Brexit
+- Signal type: `contract_awarded`
+- File: `src/lib/find-a-tender.ts`
+
+**3. Companies House API** (FREE - requires key)
+- Detects leadership changes (director appointments)
+- Company verification for enrichment
+- Signal type: `leadership_change`
+- File: `src/lib/companies-house.ts`
+- Requires: `COMPANIES_HOUSE_API_KEY` in env
+
+**4. Planning Data API** (FREE)
+- Fetches planning applications (England only)
+- Government beta service
+- Signal types: `planning_approved`, `planning_submitted`
+- File: `src/lib/planning-data.ts`
+
+### Implementation
+
+- All sources sync automatically with daily cron job
+- New endpoint: `/api/cron/government` for manual sync
+- Integrated into existing daily cron at `/api/cron/daily`
+- Uses existing signal deduplication (hash fingerprint)
+
+### Files Created
+- `src/lib/contracts-finder.ts`
+- `src/lib/find-a-tender.ts`
+- `src/lib/companies-house.ts`
+- `src/lib/planning-data.ts`
+- `src/app/api/cron/government/route.ts`
+
+### Files Modified
+- `src/app/api/cron/daily/route.ts` - Added government sync calls
+
+### Environment Variables Needed
+```
+COMPANIES_HOUSE_API_KEY=your_key_here  # Get free at developer.company-information.service.gov.uk
+FIND_A_TENDER_API_KEY=your_key_here    # Optional, get free at find-tender.service.gov.uk
+```
+
+### Deployment
+- Successfully deployed to https://signal-mentis.vercel.app
