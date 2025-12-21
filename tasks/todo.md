@@ -1,0 +1,106 @@
+# Signal Mentis Implementation Plan
+
+## Phase 1: Fix Search Reliability
+- [x] Add timeout wrapper function to `src/lib/search.ts`
+- [x] Apply timeout to Firecrawl search calls (10s)
+- [x] Apply timeout to Firecrawl scrape calls (15s)
+- [x] Reduce default queries from 3 to 2
+
+## Phase 2: Decision Maker Mapping Framework
+- [x] Create `src/lib/contact-mapping.ts` with department detection
+- [x] Add signal type to role mapping
+- [x] Add `getTargetRoles` function
+
+## Phase 3: Lead Enrichment Integration
+- [x] Create `src/lib/enrichment/leadmagic.ts` - LeadMagic API wrapper
+- [x] Create `src/lib/enrichment/prospeo.ts` - Prospeo API wrapper
+- [x] Create `src/lib/enrichment/index.ts` - Enrichment orchestrator
+- [x] Create `src/app/api/signals/[id]/enrich/route.ts` - API endpoint
+- [x] Update `src/types/index.ts` with Contact interfaces
+- [x] Update `src/app/(dashboard)/settings/page.tsx` with API key fields
+- [x] Update `src/components/dashboard/SignalCard.tsx` with Enrich button
+- [x] Update `src/components/dashboard/SignalsTable.tsx` with contacts column
+
+## Phase 4: Enhanced Exports
+- [x] Update `src/lib/export.ts` to include contact fields
+
+## Database Migrations (Manual - YOU NEED TO DO THIS)
+
+Run this SQL in your Supabase dashboard:
+
+```sql
+-- 1. Add API key columns to user_settings
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS leadmagic_api_key text;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS prospeo_api_key text;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS enrichment_include_phone boolean DEFAULT false;
+
+-- 2. Create signal_contacts table
+CREATE TABLE IF NOT EXISTS signal_contacts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  signal_id uuid REFERENCES signals(id) ON DELETE CASCADE,
+  full_name text NOT NULL,
+  first_name text,
+  last_name text,
+  job_title text,
+  email text,
+  email_status text,
+  phone text,
+  linkedin_url text,
+  enrichment_source text,
+  is_primary boolean DEFAULT false,
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_signal_contacts_signal_id ON signal_contacts(signal_id);
+```
+
+---
+
+## Review
+
+### Summary of Changes
+
+**Phase 1: Search Reliability**
+- Added `withTimeout()` wrapper function to `search.ts`
+- Wrapped Firecrawl search calls with 10s timeout
+- Wrapped Firecrawl scrape calls with 15s timeout
+- Reduced default query count from 3 to 2 for faster searches
+
+**Phase 2: Contact Mapping**
+- Created `contact-mapping.ts` with smart role detection
+- Maps signal types to relevant decision maker titles (e.g., funding → CEO/CFO/VP Sales)
+- Detects department from job titles for hiring signals
+
+**Phase 3: Enrichment Integration**
+- Created LeadMagic API wrapper (finds people by role at company)
+- Created Prospeo API wrapper (finds email + phone)
+- Created enrichment orchestrator that loops through roles (one API call per role)
+- Created `/api/signals/[id]/enrich` endpoint
+- Added API key fields to Settings page (LeadMagic, Prospeo, phone toggle)
+- Added Enrich button to SignalCard (shows when no contacts exist)
+- Added contacts display section to SignalCard (name, title, email/phone/LinkedIn icons)
+- Added Contacts column to SignalsTable
+
+**Phase 4: Export**
+- Updated CSV export to include contact fields
+- One row per contact (signal info repeated)
+
+### Files Created
+- `src/lib/contact-mapping.ts`
+- `src/lib/enrichment/leadmagic.ts`
+- `src/lib/enrichment/prospeo.ts`
+- `src/lib/enrichment/index.ts`
+- `src/app/api/signals/[id]/enrich/route.ts`
+
+### Files Modified
+- `src/lib/search.ts` - timeout wrapper + reduced queries
+- `src/types/index.ts` - added SignalContact interface + UserSettings fields
+- `src/app/(dashboard)/settings/page.tsx` - API key inputs
+- `src/components/dashboard/SignalCard.tsx` - Enrich button + contacts display
+- `src/components/dashboard/SignalsTable.tsx` - contacts column
+- `src/lib/export.ts` - contact fields in CSV
+
+### Next Steps
+1. **Run the database migrations** in Supabase (see SQL above)
+2. Add your LeadMagic and Prospeo API keys in Settings
+3. Test the Enrich button on a signal

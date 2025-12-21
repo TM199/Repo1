@@ -1,0 +1,226 @@
+================================================================================
+SIGNAL MENTIS - CURRENT STATE & BUGS DOCUMENT
+================================================================================
+Created: 2025-12-20
+Purpose: Context handoff for debugging in new session
+
+================================================================================
+WHAT THE APP DOES
+================================================================================
+
+Signal Mentis is a SaaS app that finds business "signals" (funding rounds,
+company expansions, contract awards, etc.) for recruiters/sales teams.
+
+Two modes of signal collection:
+1. URL SOURCES (Mode 1): User adds URLs, app scrapes them on schedule
+2. AI SEARCH (Mode 2): User creates search profiles, app searches web + scrapes results
+
+Tech Stack:
+- Next.js 16.1.0 (App Router)
+- Supabase (Postgres database + Auth)
+- Firecrawl API (web scraping + AI extraction)
+- Vercel (hosting)
+- TypeScript
+
+================================================================================
+WHAT WORKS
+================================================================================
+
+1. AUTH: Login/signup works
+2. FIRECRAWL: Successfully extracts signals from web pages (confirmed in Firecrawl dashboard)
+3. AI SEARCH: Runs searches, finds signals, extracts data
+4. DATABASE INSERT: Signals now save to Supabase `signals` table (fixed today)
+5. SEARCH PROFILES: Can create/edit/delete search profiles
+
+Confirmed working data in Supabase signals table:
+- 7 signals saved (PolyAI, OpenTrade, Maze, HoloMem, Paapi, Teal, Definely)
+- All have correct: company_name, company_domain, signal_type, signal_title, etc.
+
+================================================================================
+WHAT DOES NOT WORK - CRITICAL BUGS
+================================================================================
+
+BUG #1: DASHBOARD DOESN'T SHOW SIGNALS
+----------------------------------------
+Location: src/app/(dashboard)/dashboard/page.tsx
+Problem: Even after removing user_id filter, signals don't appear in UI
+Likely cause: Need to check if there's a caching issue or RLS policy blocking reads
+Test: Check Vercel logs for query errors
+
+BUG #2: SIGNALS PAGE DOESN'T SHOW SIGNALS
+----------------------------------------
+Location: src/app/(dashboard)/signals/page.tsx
+Problem: Same as dashboard - signals exist in DB but don't show in UI
+Note: We removed user_id filter but may need to check for other issues
+
+BUG #3: "Found undefined new signals" IN UI
+----------------------------------------
+Location: src/components/dashboard/SearchProfileCard.tsx (line 153)
+Problem: Shows "Found undefined new signals" after search
+API returns: { newSignals, signals_found, run_id }
+Component expects: result.newSignals
+Status: Should be fixed but needs verification
+
+BUG #4: DOWNLOAD CSV NOT WORKING
+----------------------------------------
+Location: src/app/api/signals/export/route.ts
+Problem: Export button doesn't download signals
+We fixed user_id filter but may have other issues
+Need to verify the query actually returns data
+
+================================================================================
+SCHEMA MISMATCH - ROOT CAUSE OF MANY BUGS
+================================================================================
+
+The TypeScript types (src/types/index.ts) don't match the actual Supabase schema!
+
+ACTUAL SIGNALS TABLE (from Supabase):
+```sql
+CREATE TABLE public.signals (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  source_id uuid,
+  company_name text,
+  company_domain text,
+  signal_type text NOT NULL,
+  signal_title text NOT NULL,
+  signal_detail text,
+  signal_url text,
+  detected_at timestamp with time zone DEFAULT now(),
+  is_new boolean DEFAULT true,
+  hash text UNIQUE,              -- NOTE: Called 'hash' not 'fingerprint'
+  source_type text DEFAULT 'scrape'::text,
+  search_run_id uuid,
+  location text,
+  industry text
+);
+```
+
+COLUMNS THAT DON'T EXIST (code was trying to use these):
+- user_id (NOT IN TABLE)
+- fingerprint (table uses 'hash')
+- raw_data (NOT IN TABLE)
+- is_read (NOT IN TABLE)
+- is_exported (NOT IN TABLE)
+- scrape_id (NOT IN TABLE)
+
+FIXES APPLIED TODAY:
+- Changed insert to use 'hash' instead of 'fingerprint'
+- Removed user_id, raw_data, is_read, is_exported from inserts
+- Updated queries to not filter by user_id
+
+================================================================================
+FILES MODIFIED TODAY
+================================================================================
+
+1. src/lib/search.ts
+   - Fixed signal insert to match actual schema
+   - Changed fingerprint -> hash
+   - Removed non-existent columns
+
+2. src/lib/signals.ts
+   - Same fixes as search.ts for URL source scraping
+
+3. src/types/index.ts
+   - Added 5 missing SignalType values:
+     project_announced, company_hiring, acquisition_merger,
+     regulatory_change, layoffs_restructure
+
+4. src/lib/firecrawl.ts
+   - Added extraction prompts for the 5 new signal types
+
+5. src/app/api/search/run/route.ts
+   - Added 'newSignals' to response (component expects this)
+
+6. src/app/api/signals/export/route.ts
+   - Removed user_id filter (column doesn't exist)
+   - Removed is_exported update (column doesn't exist)
+
+7. src/app/(dashboard)/dashboard/page.tsx
+   - Removed user_id filter from signals queries
+
+8. src/app/(dashboard)/signals/page.tsx
+   - Removed user_id filter
+
+9. src/lib/supabase/server.ts
+   - Changed createAdminClient to use regular supabase-js instead of SSR client
+
+================================================================================
+THINGS TO CHECK/FIX IN NEW SESSION
+================================================================================
+
+PRIORITY 1 - FIX SIGNAL DISPLAY:
+1. Check if Supabase has RLS (Row Level Security) policies blocking reads
+2. Check Vercel logs for any query errors
+3. Verify the signals query actually returns data in API
+4. Test: SELECT * FROM signals LIMIT 10; in Supabase SQL editor
+
+PRIORITY 2 - FIX EXPORT:
+1. Test export API directly: /api/signals/export
+2. Check if CSV is being generated
+3. Verify search_run_id filter works
+
+PRIORITY 3 - UI FIXES:
+1. "Found undefined new signals" - verify newSignals is returned
+2. Download button on search results page
+3. Stats cards showing 0 when there are signals
+
+PRIORITY 4 - SECURITY:
+1. Add user_id column to signals table, OR
+2. Filter signals by joining with search_runs/sources (which have user_id)
+Currently showing ALL signals to ALL users (not ideal)
+
+PRIORITY 5 - EMAIL NOTIFICATIONS:
+- Check if email cron jobs are working
+- Verify Resend API integration
+
+================================================================================
+DATABASE TABLES OVERVIEW
+================================================================================
+
+signals - Stores extracted signals (7 rows currently)
+sources - URL sources for scraping
+search_profiles - AI search profile configurations
+search_runs - History of AI search executions
+scrapes - History of URL source scrapes
+user_settings - User notification preferences
+outreach_logs - Export tracking
+
+================================================================================
+ENVIRONMENT VARIABLES NEEDED
+================================================================================
+
+NEXT_PUBLIC_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+FIRECRAWL_API_KEY
+RESEND_API_KEY (for emails)
+
+================================================================================
+HOW TO DEBUG
+================================================================================
+
+1. Check Vercel logs:
+   npx vercel logs signal-mentis.vercel.app
+
+2. Check Supabase directly:
+   - Go to Supabase dashboard
+   - SQL Editor: SELECT * FROM signals;
+
+3. Test API directly:
+   - /api/signals (GET)
+   - /api/signals/export (GET)
+   - /api/search/run (POST with profileId)
+
+4. Check browser console for errors
+
+================================================================================
+DEPLOYMENT
+================================================================================
+
+Live URL: https://signal-mentis.vercel.app
+Deploy command: npx vercel --prod
+Build command: npm run build
+
+================================================================================
+END OF DOCUMENT
+================================================================================
