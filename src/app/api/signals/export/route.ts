@@ -4,7 +4,6 @@ import { signalsToCsv } from '@/lib/export';
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
-  // Use admin client for signals since table has no user_id and RLS blocks access
   const adminSupabase = createAdminClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -17,11 +16,45 @@ export async function GET(request: NextRequest) {
   const ids = searchParams.get('ids')?.split(',');
   const searchRunId = searchParams.get('search_run_id');
 
-  // Use admin client to bypass RLS for signals
+  // Get user's source IDs and search run IDs for filtering
+  const { data: sources } = await adminSupabase
+    .from('sources')
+    .select('id')
+    .eq('user_id', user.id);
+
+  const { data: searchRuns } = await adminSupabase
+    .from('search_runs')
+    .select('id')
+    .eq('user_id', user.id);
+
+  const sourceIds = sources?.map(s => s.id) || [];
+  const searchRunIds = searchRuns?.map(r => r.id) || [];
+
+  // If user has no sources or search runs, return empty
+  if (sourceIds.length === 0 && searchRunIds.length === 0) {
+    const csv = signalsToCsv([]);
+    return new NextResponse(csv, {
+      headers: {
+        'Content-Type': 'text/csv',
+        'Content-Disposition': `attachment; filename=signals-${new Date().toISOString().split('T')[0]}.csv`,
+      },
+    });
+  }
+
+  // Build query - filter by user's signals
   let query = adminSupabase
     .from('signals')
     .select('*')
     .order('detected_at', { ascending: false });
+
+  // Filter by user's sources or search runs
+  if (sourceIds.length > 0 && searchRunIds.length > 0) {
+    query = query.or(`source_id.in.(${sourceIds.join(',')}),search_run_id.in.(${searchRunIds.join(',')})`);
+  } else if (sourceIds.length > 0) {
+    query = query.in('source_id', sourceIds);
+  } else {
+    query = query.in('search_run_id', searchRunIds);
+  }
 
   if (signalType) {
     query = query.eq('signal_type', signalType);
@@ -32,18 +65,10 @@ export async function GET(request: NextRequest) {
   }
 
   if (searchRunId) {
-    // Verify user owns this search run
-    const { data: searchRun } = await supabase
-      .from('search_runs')
-      .select('id')
-      .eq('id', searchRunId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (!searchRun) {
+    // Verify user owns this search run (already filtered above, but double-check)
+    if (!searchRunIds.includes(searchRunId)) {
       return NextResponse.json({ error: 'Search run not found' }, { status: 404 });
     }
-
     query = query.eq('search_run_id', searchRunId);
   }
 

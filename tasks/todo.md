@@ -104,3 +104,38 @@ CREATE INDEX IF NOT EXISTS idx_signal_contacts_signal_id ON signal_contacts(sign
 1. **Run the database migrations** in Supabase (see SQL above)
 2. Add your LeadMagic and Prospeo API keys in Settings
 3. Test the Enrich button on a signal
+
+---
+
+## Signal Insertion Bug Fix (December 2024)
+
+### Problem
+Signals from Firecrawl API were not being inserted into the Supabase signals table.
+
+### Root Causes Identified
+
+1. **BUG 1 (CRITICAL)**: Signals API at `src/app/api/signals/route.ts:21` was filtering on `.eq('user_id', user.id)` but the `user_id` column **does not exist** in the signals table. This caused the API to return 0 results silently.
+
+2. **BUG 2 (DATA LEAK)**: Dashboard and Signals pages used admin client without filtering by user - ALL users could see ALL signals.
+
+3. **BUG 3 (MINOR)**: TypeScript `Source` interface had `updated_at` field that doesn't exist in the database.
+
+4. **BUG 5 (CRITICAL)**: Deduplication only checked within same source/type, but database has GLOBAL UNIQUE constraint on `hash`. This caused batch insert failures when the same signal was scraped from different sources.
+
+### Changes Made
+
+- [x] Created `src/lib/supabase/queries.ts` - Helper functions for user-filtered signals
+- [x] Fixed `src/app/api/signals/route.ts` - Removed invalid user_id filter, added user filtering through sources/search_runs
+- [x] Fixed `src/app/(dashboard)/dashboard/page.tsx` - Now filters signals by user
+- [x] Fixed `src/app/(dashboard)/signals/page.tsx` - Now filters signals by user
+- [x] Fixed `src/app/api/signals/export/route.ts` - Now filters signals by user
+- [x] Fixed `src/types/index.ts` - Removed `updated_at` from Source interface
+- [x] Fixed `src/lib/signals.ts` - Global deduplication (checks ALL hashes, not just current source)
+- [x] Fixed `src/lib/search.ts` - Global deduplication (checks ALL hashes, not just search type)
+
+### Impact
+
+- **Minimal code changes**: Each fix is targeted and only changes necessary lines
+- **No breaking changes**: All existing functionality preserved
+- **Security improvement**: Users now only see their own signals
+- **Data integrity improvement**: Global deduplication prevents hash constraint violations

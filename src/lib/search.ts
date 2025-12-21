@@ -539,11 +539,11 @@ export async function runSearch(
     const result = await executeSearch(profile as SearchProfile, onProgress);
     console.log(`[Search] executeSearch returned ${result.signals.length} signals`);
 
-    // Table uses 'hash' column, not 'fingerprint', and has no user_id column
+    // Check for existing hashes GLOBALLY to prevent duplicates across all sources
+    // (database has a UNIQUE constraint on hash column)
     const { data: existingSignals, error: existingError } = await supabase
       .from('signals')
-      .select('hash')
-      .eq('source_type', 'search');
+      .select('hash');
 
     if (existingError) {
       console.error('[Search] Error fetching existing signals:', existingError);

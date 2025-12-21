@@ -32,11 +32,11 @@ export async function processSource(source: Source): Promise<{
     return { success: false, itemsFound: 0, newItems: 0, error };
   }
 
-  // Table uses 'hash' column, not 'fingerprint'
+  // Check for existing hashes GLOBALLY to prevent duplicates across all sources
+  // (database has a UNIQUE constraint on hash column)
   const { data: existingSignals } = await supabase
     .from('signals')
-    .select('hash')
-    .eq('source_id', source.id);
+    .select('hash');
 
   const existingHashes = new Set(
     existingSignals?.map(s => s.hash).filter(Boolean) || []

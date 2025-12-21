@@ -43,7 +43,6 @@ export interface Source {
   is_active: boolean;
   last_scraped_at: string | null;
   created_at: string;
-  updated_at: string;
 }
 
 export interface Scrape {

@@ -1,43 +1,36 @@
 import Link from 'next/link';
-import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { createClient } from '@/lib/supabase/server';
 import { SignalCard } from '@/components/dashboard/SignalCard';
 import { StatsCards } from '@/components/dashboard/StatsCards';
 import { Button } from '@/components/ui/button';
 import { Signal } from '@/types';
 import { Download } from 'lucide-react';
+import { getSignalsForUser, countSignalsForUser } from '@/lib/supabase/queries';
 
 export default async function DashboardPage() {
   const supabase = await createClient();
-  // Use admin client for signals since table has no user_id and RLS blocks access
-  const adminSupabase = createAdminClient();
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Use admin client to bypass RLS for signals
-  const { data: signals, error: signalsError } = await adminSupabase
-    .from('signals')
-    .select('*, source:sources(name)')
-    .order('detected_at', { ascending: false })
-    .limit(20);
+  if (!user) {
+    return <div>Please log in</div>;
+  }
+
+  // Get signals filtered by user
+  const { data: signals, error: signalsError } = await getSignalsForUser(user.id, { limit: 20 });
 
   if (signalsError) {
     console.error('[Dashboard] Error fetching signals:', signalsError);
   }
-  console.log('[Dashboard] Fetched signals count:', signals?.length || 0);
 
-  const { count: totalSignals } = await adminSupabase
-    .from('signals')
-    .select('*', { count: 'exact', head: true });
-
-  const { count: newSignals } = await adminSupabase
-    .from('signals')
-    .select('*', { count: 'exact', head: true })
-    .eq('is_new', true);
+  // Get counts for user's signals only
+  const totalSignals = await countSignalsForUser(user.id);
+  const newSignals = await countSignalsForUser(user.id, { isNew: true });
 
   const { count: totalSources } = await supabase
     .from('sources')
     .select('*', { count: 'exact', head: true })
-    .eq('user_id', user?.id);
+    .eq('user_id', user.id);
 
   return (
     <div className="space-y-6">
