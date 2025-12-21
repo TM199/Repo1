@@ -580,6 +580,7 @@ export async function runSearch(
       }));
 
       console.log('[Search] First signal to insert:', JSON.stringify(signalsToInsert[0]));
+      console.log('[Search] All signal types to insert:', signalsToInsert.map(s => s.signal_type));
 
       const { data: insertedData, error: insertError } = await supabase
         .from('signals')
@@ -588,9 +589,11 @@ export async function runSearch(
 
       if (insertError) {
         console.error('[Search] CRITICAL - Insert failed:', JSON.stringify(insertError));
-        // Don't throw - continue and report partial success
-        // But log enough detail to debug
+        console.error('[Search] Insert error code:', insertError.code);
+        console.error('[Search] Insert error details:', insertError.details);
+        console.error('[Search] Insert error hint:', insertError.hint);
         console.error('[Search] Signal type attempted:', signalsToInsert[0]?.signal_type);
+        console.error('[Search] Profile signal_types:', profile.signal_types);
       } else {
         console.log(`[Search] Successfully inserted ${insertedData?.length || 0} signals to database`);
       }
@@ -670,6 +673,15 @@ function deduplicateSignals(signals: ExtractedSignal[]): ExtractedSignal[] {
 function detectSignalType(signal: ExtractedSignal, allowedTypes: string[]): string {
   const text = `${signal.signal_title} ${signal.signal_detail}`.toLowerCase();
 
+  // Job postings detection (common patterns from job boards like Indeed)
+  if (text.includes('engineer') || text.includes('developer') || text.includes('manager') ||
+      text.includes('analyst') || text.includes('designer') || text.includes('permanent') ||
+      text.includes('salary') || text.includes('remote') || text.includes('hybrid') ||
+      text.includes('£') || text.includes('hiring') || text.includes('job')) {
+    if (allowedTypes.includes('new_job')) return 'new_job';
+    if (allowedTypes.includes('company_hiring')) return 'company_hiring';
+  }
+
   if (text.includes('contract') || text.includes('tender') || text.includes('awarded')) {
     return allowedTypes.includes('contract_awarded') ? 'contract_awarded' : allowedTypes[0];
   }
@@ -695,7 +707,8 @@ function detectSignalType(signal: ExtractedSignal, allowedTypes: string[]): stri
     return allowedTypes.includes('acquisition_merger') ? 'acquisition_merger' : allowedTypes[0];
   }
 
-  return allowedTypes[0] || 'company_hiring';
+  // Default to first allowed type or new_job for job-like content
+  return allowedTypes[0] || 'new_job';
 }
 
 function sleep(ms: number): Promise<void> {
