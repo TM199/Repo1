@@ -31,10 +31,10 @@ export async function getSignalsForUser(
     return { data: [], error: null };
   }
 
-  // Build query
+  // Build query - include contacts for persistence after page reload
   let query = adminSupabase
     .from('signals')
-    .select('*, source:sources(name)')
+    .select('*, source:sources(name), contacts:signal_contacts(*)')
     .order('detected_at', { ascending: false });
 
   // Filter by is_new if specified

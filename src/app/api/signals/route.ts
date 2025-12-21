@@ -35,10 +35,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json([]);
   }
 
-  // Build query - use admin client since signals table has no user_id column
+  // Build query - include contacts for persistence after page reload
   let query = adminSupabase
     .from('signals')
-    .select('*, source:sources(name)')
+    .select('*, source:sources(name), contacts:signal_contacts(*)')
     .order('detected_at', { ascending: false })
     .limit(limit);
 

@@ -57,6 +57,9 @@ export async function PUT(request: NextRequest) {
       email_frequency: body.email_frequency,
       notify_url_sources: body.notify_url_sources,
       notify_ai_search: body.notify_ai_search,
+      leadmagic_api_key: body.leadmagic_api_key,
+      prospeo_api_key: body.prospeo_api_key,
+      enrichment_include_phone: body.enrichment_include_phone,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id' })
     .select()

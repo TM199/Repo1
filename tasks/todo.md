@@ -139,3 +139,49 @@ Signals from Firecrawl API were not being inserted into the Supabase signals tab
 - **No breaking changes**: All existing functionality preserved
 - **Security improvement**: Users now only see their own signals
 - **Data integrity improvement**: Global deduplication prevents hash constraint violations
+
+---
+
+## UX Enhancement: Real-Time Streaming (December 2024)
+
+### Goal
+Create a sleek, Clay.com-like experience for enrichment and search with real-time feedback, progress indicators, and clear status displays.
+
+### Changes Made
+
+**Phase 1: Bug Fixes**
+- [x] Fixed contact persistence - contacts now load after page refresh
+- [x] Fixed signal count API - now counts only current user's signals (was counting ALL users)
+
+**Phase 2: SSE Streaming Enrichment**
+- [x] Created `/api/signals/[id]/enrich/stream` - SSE endpoint for real-time enrichment
+- [x] Updated enrichment library with `onProgress` callback
+- [x] Updated SignalCard with live enrichment progress panel
+- [x] Added email status badges (verified=green, risky=red, unknown=gray)
+- [x] Added re-enrich button for existing contacts
+
+**Phase 3: SSE Streaming Search**
+- [x] Created `/api/search/run/stream` - SSE endpoint for real-time search
+- [x] Updated search run page with live progress display
+- [x] Shows signals as they're discovered during search
+- [x] Shows query progress and current action
+
+**Phase 4: Enhanced Notifications**
+- [x] Reduced sidebar polling to 10 seconds (from 30)
+- [x] Added toast notifications when new signals arrive
+
+### Files Created
+- `src/app/api/signals/[id]/enrich/stream/route.ts` - SSE enrichment endpoint
+- `src/app/api/search/run/stream/route.ts` - SSE search endpoint
+
+### Files Modified
+- `src/lib/supabase/queries.ts` - Added contacts join to signal queries
+- `src/app/api/signals/route.ts` - Added contacts join
+- `src/app/api/signals/count/route.ts` - Fixed user filtering
+- `src/lib/enrichment/index.ts` - Added onProgress callback
+- `src/components/dashboard/SignalCard.tsx` - SSE enrichment + progress panel + email badges + re-enrich
+- `src/app/(dashboard)/search/[id]/run/page.tsx` - SSE search + live signals
+- `src/components/dashboard/Sidebar.tsx` - Faster polling + toast notifications
+
+### Deployment
+- Successfully deployed to https://signal-mentis.vercel.app

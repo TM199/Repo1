@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, CheckCircle2, XCircle, ArrowLeft, ExternalLink, Target, Download } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, ArrowLeft, Target, Download, Search } from 'lucide-react';
 
 interface SearchResult {
   success: boolean;
@@ -15,6 +15,23 @@ interface SearchResult {
   error?: string;
   profile_name?: string;
 }
+
+interface LiveSignal {
+  company_name: string;
+  signal_title: string;
+  signal_type: string;
+}
+
+const signalTypeLabels: Record<string, string> = {
+  new_job: 'Hiring',
+  planning_submitted: 'Planning',
+  planning_approved: 'Approved',
+  contract_awarded: 'Contract',
+  funding_announced: 'Funding',
+  leadership_change: 'Leadership',
+  cqc_rating_change: 'CQC',
+  company_expansion: 'Expansion',
+};
 
 export default function RunSearchPage() {
   const router = useRouter();
@@ -25,6 +42,9 @@ export default function RunSearchPage() {
   const [result, setResult] = useState<SearchResult | null>(null);
   const [profileName, setProfileName] = useState<string>('');
   const [exporting, setExporting] = useState(false);
+  const [progressMessage, setProgressMessage] = useState<string>('Initializing search...');
+  const [queryCount, setQueryCount] = useState<number>(0);
+  const [liveSignals, setLiveSignals] = useState<LiveSignal[]>([]);
 
   async function handleExport() {
     if (!result?.run_id) return;
@@ -57,8 +77,8 @@ export default function RunSearchPage() {
           setProfileName(profileData.name);
         }
 
-        // Then run the search
-        const response = await fetch('/api/search/run', {
+        // Run search with streaming
+        const response = await fetch('/api/search/run/stream', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -66,27 +86,60 @@ export default function RunSearchPage() {
           body: JSON.stringify({ profileId }),
         });
 
-        const data = await response.json();
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Search failed');
+        }
 
-        if (response.ok) {
-          setResult({
-            success: true,
-            signals_found: data.signals_found || 0,
-            run_id: data.run_id,
-            profile_name: profileName,
-          });
-        } else {
-          setResult({
-            success: false,
-            error: data.error || 'Search failed',
-          });
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('No response stream');
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const event = JSON.parse(line.slice(6));
+
+              switch (event.type) {
+                case 'queries':
+                  setQueryCount(event.count);
+                  setProgressMessage(`Generated ${event.count} search queries`);
+                  break;
+                case 'progress':
+                  setProgressMessage(event.message);
+                  break;
+                case 'signal':
+                  setLiveSignals(prev => [...prev, event.signal]);
+                  break;
+                case 'complete':
+                  setResult({
+                    success: true,
+                    signals_found: event.signals_found,
+                    run_id: event.run_id,
+                    profile_name: profileName,
+                  });
+                  setLoading(false);
+                  break;
+                case 'error':
+                  throw new Error(event.message);
+              }
+            }
+          }
         }
       } catch (error) {
         setResult({
           success: false,
           error: error instanceof Error ? error.message : 'An unexpected error occurred',
         });
-      } finally {
         setLoading(false);
       }
     }
@@ -118,16 +171,60 @@ export default function RunSearchPage() {
         </CardHeader>
 
         <CardContent className="space-y-6">
-          {/* Loading State */}
+          {/* Loading State with Live Progress */}
           {loading && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 className="h-16 w-16 text-[#635BFF] animate-spin mb-4" />
-              <p className="text-[#6B7C93] text-center">
-                Searching for signals matching your profile criteria...
-              </p>
-              <p className="text-xs text-[#9CA3AF] mt-2">
-                This may take a few moments
-              </p>
+            <div className="space-y-6">
+              {/* Progress Header */}
+              <div className="flex flex-col items-center justify-center py-4">
+                <div className="relative">
+                  <Loader2 className="h-12 w-12 text-[#635BFF] animate-spin" />
+                  {liveSignals.length > 0 && (
+                    <div className="absolute -top-1 -right-1 w-6 h-6 bg-[#635BFF] rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs font-bold">{liveSignals.length}</span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[#0A2540] font-medium mt-4 text-center">
+                  {progressMessage}
+                </p>
+                {queryCount > 0 && (
+                  <p className="text-xs text-[#6B7C93] mt-1">
+                    Running {queryCount} queries
+                  </p>
+                )}
+              </div>
+
+              {/* Live Signals Feed */}
+              {liveSignals.length > 0 && (
+                <div className="border border-[#E3E8EE] rounded-lg overflow-hidden">
+                  <div className="bg-[#F6F9FC] px-4 py-2 border-b border-[#E3E8EE]">
+                    <p className="text-xs font-medium text-[#6B7C93]">
+                      SIGNALS FOUND ({liveSignals.length})
+                    </p>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto divide-y divide-[#E3E8EE]">
+                    {liveSignals.map((signal, idx) => (
+                      <div key={idx} className="px-4 py-2 flex items-center gap-3 animate-fadeIn">
+                        <Badge
+                          className="text-[9px] font-medium px-1.5 py-0.5 border-0 shrink-0"
+                          style={{ backgroundColor: '#EEF2FF', color: '#4338CA' }}
+                        >
+                          {signalTypeLabels[signal.signal_type] || signal.signal_type}
+                        </Badge>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-[#0A2540] truncate">
+                            {signal.company_name}
+                          </p>
+                          <p className="text-[10px] text-[#6B7C93] truncate">
+                            {signal.signal_title}
+                          </p>
+                        </div>
+                        <CheckCircle2 className="h-4 w-4 text-[#047857] shrink-0" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -244,7 +341,7 @@ export default function RunSearchPage() {
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
             <div className="flex-shrink-0 w-8 h-8 bg-white rounded-full flex items-center justify-center">
-              <span className="text-[#635BFF] font-bold">?</span>
+              <Search className="h-4 w-4 text-[#635BFF]" />
             </div>
             <div className="flex-1">
               <h4 className="text-sm font-semibold text-[#0A2540] mb-1">About Search Runs</h4>

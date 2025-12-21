@@ -10,11 +10,40 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Use admin client to bypass RLS for signals count
-  const { count, error } = await adminSupabase
+  // Get user's source IDs and search run IDs for filtering
+  const { data: sources } = await adminSupabase
+    .from('sources')
+    .select('id')
+    .eq('user_id', user.id);
+
+  const { data: searchRuns } = await adminSupabase
+    .from('search_runs')
+    .select('id')
+    .eq('user_id', user.id);
+
+  const sourceIds = sources?.map(s => s.id) || [];
+  const searchRunIds = searchRuns?.map(r => r.id) || [];
+
+  // If user has no sources or search runs, return 0
+  if (sourceIds.length === 0 && searchRunIds.length === 0) {
+    return NextResponse.json({ count: 0 });
+  }
+
+  // Count only this user's new signals
+  let query = adminSupabase
     .from('signals')
     .select('*', { count: 'exact', head: true })
     .eq('is_new', true);
+
+  if (sourceIds.length > 0 && searchRunIds.length > 0) {
+    query = query.or(`source_id.in.(${sourceIds.join(',')}),search_run_id.in.(${searchRunIds.join(',')})`);
+  } else if (sourceIds.length > 0) {
+    query = query.in('source_id', sourceIds);
+  } else {
+    query = query.in('search_run_id', searchRunIds);
+  }
+
+  const { count, error } = await query;
 
   if (error) {
     console.error('[SignalsCount] Error:', error);

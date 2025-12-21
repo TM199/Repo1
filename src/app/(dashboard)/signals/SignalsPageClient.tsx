@@ -1,18 +1,51 @@
 'use client';
 
 import { useState } from 'react';
-import { Signal } from '@/types';
+import { Signal, SignalContact } from '@/types';
+
+type SignalWithContacts = Signal & { contacts?: SignalContact[] };
 import { SignalCard } from '@/components/dashboard/SignalCard';
 import { SignalsTable } from '@/components/dashboard/SignalsTable';
 import { Button } from '@/components/ui/button';
-import { LayoutGrid, TableIcon, Download } from 'lucide-react';
+import { LayoutGrid, TableIcon, Download, UserPlus, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface SignalsPageClientProps {
-  signals: Signal[];
+  signals: SignalWithContacts[];
 }
 
 export function SignalsPageClient({ signals }: SignalsPageClientProps) {
   const [view, setView] = useState<'cards' | 'table'>('cards');
+  const [enrichingAll, setEnrichingAll] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState({ current: 0, total: 0 });
+
+  const handleEnrichAll = async () => {
+    const signalsToEnrich = signals.filter(s => !s.contacts || s.contacts.length === 0);
+    if (signalsToEnrich.length === 0) {
+      toast.info('All signals already have contacts');
+      return;
+    }
+
+    setEnrichingAll(true);
+    setEnrichProgress({ current: 0, total: signalsToEnrich.length });
+    let successCount = 0;
+
+    for (let i = 0; i < signalsToEnrich.length; i++) {
+      setEnrichProgress({ current: i + 1, total: signalsToEnrich.length });
+      try {
+        const response = await fetch(`/api/signals/${signalsToEnrich[i].id}/enrich`, {
+          method: 'POST',
+        });
+        if (response.ok) successCount++;
+      } catch {
+        // Continue to next signal
+      }
+    }
+
+    setEnrichingAll(false);
+    toast.success(`Enriched ${successCount} of ${signalsToEnrich.length} signals`);
+    window.location.reload();
+  };
 
   const handleExportAll = async () => {
     const response = await fetch('/api/signals/export');
@@ -32,6 +65,25 @@ export function SignalsPageClient({ signals }: SignalsPageClientProps) {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-[#0A2540]">All Signals</h1>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleEnrichAll}
+            disabled={enrichingAll}
+            className="border-[#E3E8EE] text-[#425466] hover:bg-[#F6F9FC]"
+          >
+            {enrichingAll ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {enrichProgress.current}/{enrichProgress.total}
+              </>
+            ) : (
+              <>
+                <UserPlus className="h-4 w-4 mr-2" />
+                Enrich All
+              </>
+            )}
+          </Button>
           <Button
             variant="outline"
             size="sm"
