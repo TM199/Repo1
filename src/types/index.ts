@@ -129,6 +129,10 @@ export interface UserSettings {
   leadmagic_api_key?: string;
   prospeo_api_key?: string;
   enrichment_include_phone?: boolean;
+  // HubSpot integration
+  hubspot_access_token?: string;
+  hubspot_refresh_token?: string;
+  hubspot_expires_at?: number;
   created_at: string;
   updated_at: string;
 }

@@ -1,247 +1,264 @@
-# Signal Mentis Implementation Plan
+# Signal Mentis Improvement Plan
 
-## Phase 1: Fix Search Reliability
-- [x] Add timeout wrapper function to `src/lib/search.ts`
-- [x] Apply timeout to Firecrawl search calls (10s)
-- [x] Apply timeout to Firecrawl scrape calls (15s)
-- [x] Reduce default queries from 3 to 2
+Based on comprehensive business analysis. Focus: Make the product viable for sales teams.
 
-## Phase 2: Decision Maker Mapping Framework
-- [x] Create `src/lib/contact-mapping.ts` with department detection
-- [x] Add signal type to role mapping
-- [x] Add `getTargetRoles` function
+## Current State Summary
+- **Working**: Signal detection (Gov APIs + Firecrawl), Lead enrichment (LeadMagic + Prospeo), CSV export
+- **Fixed (Dec 2024)**: Search/filter on signals page, Domain extraction, Leadership detection
+- **Missing**: CRM integration, Activity tracking
 
-## Phase 3: Lead Enrichment Integration
-- [x] Create `src/lib/enrichment/leadmagic.ts` - LeadMagic API wrapper
-- [x] Create `src/lib/enrichment/prospeo.ts` - Prospeo API wrapper
-- [x] Create `src/lib/enrichment/index.ts` - Enrichment orchestrator
-- [x] Create `src/app/api/signals/[id]/enrich/route.ts` - API endpoint
-- [x] Update `src/types/index.ts` with Contact interfaces
-- [x] Update `src/app/(dashboard)/settings/page.tsx` with API key fields
-- [x] Update `src/components/dashboard/SignalCard.tsx` with Enrich button
-- [x] Update `src/components/dashboard/SignalsTable.tsx` with contacts column
+---
 
-## Phase 4: Enhanced Exports
-- [x] Update `src/lib/export.ts` to include contact fields
+## Phase 1: Critical Fixes (P0) - COMPLETED
 
-## Database Migrations (Manual - YOU NEED TO DO THIS)
+### 1.1 Add Search & Filter to Signals Page
+**Files**: `SignalsPageClient.tsx`, `/api/signals/route.ts`, `queries.ts`
 
-Run this SQL in your Supabase dashboard:
+- [x] Add search input for company name filtering
+- [x] Add signal type dropdown filter
+- [x] Add "has contacts" checkbox filter
+- [x] Add date range filter
+- [x] Update API route to accept filter parameters
+- [x] Update queries.ts with filter logic
+- [x] Add clear filters button
+- [x] Add pagination (50 per page with Previous/Next)
 
+### 1.2 Fix Company Domain Extraction
+**Files**: `contracts-finder.ts`, `find-a-tender.ts`, `planning-data.ts`, `companies-house.ts`
+
+- [x] Create domain lookup utility (`domain-resolver.ts`)
+- [x] Update contracts-finder.ts - extract from OCDS party contact info
+- [x] Update find-a-tender.ts - extract from OCDS party contact info
+- [x] Update planning-data.ts - return empty instead of guessing
+- [x] Update companies-house.ts - return empty instead of guessing
+- [x] Fallback: return empty string instead of guessing domains
+
+### 1.3 Fix Leadership Change Detection
+**Files**: `companies-house.ts`
+
+- [x] Changed from "recently incorporated" to actual officer appointment dates
+- [x] Filter by appointed_on date to find recent appointments
+- [x] Alternative fallback method for when advanced search unavailable
+- [x] Filter to only executive appointments (not secretaries)
+- [x] Added proper date filtering for recent appointments
+
+---
+
+## Phase 2: CRM Integration (P1) - COMPLETED
+
+### 2.1 HubSpot Integration
+**New Files**: `src/lib/integrations/hubspot.ts`, `/api/integrations/hubspot/`
+
+- [x] Create HubSpot API client
+- [x] Add OAuth connection flow (authorize, callback, token refresh)
+- [x] Create API routes for connection management
+- [x] Implement push signals as Companies (upsert by domain)
+- [x] Implement push contacts as Contacts (upsert by email)
+- [x] Auto-associate contacts to companies
+- [ ] Add "Push to HubSpot" button on signal cards (UI pending)
+- [ ] Create settings page for HubSpot connection (UI pending)
+
+### 2.2 Export Improvements
+**Files**: `export.ts`, `/api/signals/export/route.ts`
+
+- [x] Add email_status column to CSV export
+- [x] Add JSON export option (`?format=json`)
+- [x] Add date range filter for export (`?date_from=&date_to=`)
+- [x] Add "export only with contacts" option (`?has_contacts=true`)
+
+---
+
+## Phase 3: Data Quality (P2)
+
+### 3.1 Add Industry Detection
+**Files**: Gov API files, `search.ts`
+
+- [ ] Map SIC codes from Companies House to industry names
+- [ ] Add industry classification for Firecrawl signals (LLM)
+- [ ] Store industry on all signals
+- [ ] Add industry filter to signals page
+
+### 3.2 Add Signal Confidence Scoring
+**New File**: `src/lib/signal-scoring.ts`
+
+- [ ] Create scoring algorithm based on source reliability
+- [ ] Factor in domain verification status
+- [ ] Factor in company match confidence
+- [ ] Display confidence score on signal cards
+
+### 3.3 Improve Enrichment Data Quality
+**Files**: `enrichment/index.ts`, `enrichment/leadmagic.ts`
+
+- [ ] Parse LinkedIn profile to get actual job title
+- [ ] Store actual title (not just searched role)
+- [ ] Add seniority detection from titles
+- [ ] Store enrichment failure reasons
+
+---
+
+## Phase 4: Advanced Features (P3)
+
+### 4.1 Activity Tracking
+- [ ] Create activities database table
+- [ ] Track when contact was exported/copied
+- [ ] Track outreach attempts
+- [ ] Show activity history on signal card
+- [ ] Prevent duplicate outreach warnings
+
+### 4.2 Slack Integration
+- [ ] Create Slack API client
+- [ ] Add Slack OAuth connection
+- [ ] Post new signals to channel
+- [ ] Filter by signal type for notifications
+
+### 4.3 Email Notifications
+- [ ] Daily/weekly signal digest emails
+- [ ] Alert on specific signal types
+- [ ] Summary of enriched contacts
+
+---
+
+## Previously Completed (Reference)
+
+### Signal Detection Infrastructure
+- [x] Government APIs (Contracts Finder, Find a Tender, Companies House, Planning Data)
+- [x] Firecrawl AI search with real-time streaming
+- [x] 14 signal types defined and detectable
+- [x] Hash-based deduplication
+- [x] Daily cron jobs for automatic sync
+
+### Lead Enrichment
+- [x] LeadMagic integration (role-based contact discovery)
+- [x] Prospeo integration (email + phone lookup)
+- [x] Real-time progress UI with streaming SSE
+- [x] Email validation status display
+- [x] Contact storage in signal_contacts table
+
+### User Interface
+- [x] Signal cards with company, type, title, detail
+- [x] 5-step search wizard
+- [x] Copy-to-clipboard for email/phone
+- [x] CSV export (full and selective)
+- [x] Cards vs Table view toggle
+- [x] Bulk enrichment
+
+---
+
+## Review - Phase 1 Completion
+
+### Summary of Changes Made
+
+**1.1 Search & Filter (SignalsPageClient.tsx)**
+- Added company name search with instant search on Enter key
+- Added signal type dropdown filter with all 14 signal types
+- Added "has contacts" filter (All/Has Contacts/Needs Enrichment)
+- Added date range filters (from/to date pickers)
+- Added collapsible filter panel (toggle with button)
+- Added active filter count badge
+- Added clear all filters button
+- Added pagination with 50 signals per page
+- Changed from server-side to client-side data fetching for dynamic filtering
+
+**1.2 API Updates (/api/signals/route.ts)**
+- Added `search` parameter for company name search (ilike)
+- Added `has_contacts` parameter (true/false)
+- Added `date_from` and `date_to` parameters
+- Added `offset` parameter for pagination
+- Updated response format to include `{ data, total, hasMore }`
+- Added global signals filter (government data) to query
+
+**1.3 Domain Extraction Fix**
+- Created `src/lib/domain-resolver.ts` utility
+- `extractDomainFromOCDSParty()` - extracts domain from contact URL if available
+- `extractDomainFromUrl()` - validates and extracts domain from URL
+- All gov API files now return empty string instead of guessing domains
+- Contracts Finder and Find a Tender try OCDS party contact info first
+
+**1.4 Leadership Detection Fix (companies-house.ts)**
+- Rewrote `fetchRecentAppointments()` to filter by actual `appointed_on` date
+- Added `fetchRecentAppointmentsAlternative()` fallback method
+- Changed default lookback from 1 day to 7 days for better coverage
+- Added `getFilingHistory()` helper for future enhancements
+- Now properly filters to only executive roles (director, LLP designated member, etc.)
+
+### Files Created
+- `src/lib/domain-resolver.ts`
+
+### Files Modified
+- `src/app/(dashboard)/signals/SignalsPageClient.tsx` - Complete rewrite with filtering
+- `src/app/(dashboard)/signals/page.tsx` - Simplified to just render client component
+- `src/app/api/signals/route.ts` - Added all filter parameters
+- `src/lib/contracts-finder.ts` - Fixed domain extraction
+- `src/lib/find-a-tender.ts` - Fixed domain extraction
+- `src/lib/planning-data.ts` - Fixed domain extraction
+- `src/lib/companies-house.ts` - Fixed leadership detection + domain extraction
+
+### Build Status
+- Successfully builds with `npm run build`
+- No TypeScript errors
+- All routes compile correctly
+
+---
+
+## Review - Phase 2 Completion
+
+### Summary of Changes Made
+
+**2.1 Export Improvements (export.ts, /api/signals/export/route.ts)**
+- Added `contact_email_status` column to CSV export
+- Added `signalsToJson()` function for JSON export
+- Added `?format=json` parameter for JSON export
+- Added `?has_contacts=true/false` filter for exporting only signals with/without contacts
+- Added `?date_from=` and `?date_to=` parameters for date range filtering
+- Export now includes contacts via `signal_contacts` join
+- Export now includes global signals (government data)
+
+**2.2 HubSpot Integration (src/lib/integrations/hubspot.ts)**
+- Full OAuth 2.0 flow implementation
+- `getAuthorizationUrl()` - generates authorization URL with required scopes
+- `exchangeCodeForTokens()` - exchanges auth code for access/refresh tokens
+- `refreshAccessToken()` - refreshes expired access tokens
+- `upsertCompany()` - creates or updates company (searches by domain first)
+- `upsertContact()` - creates or updates contact (searches by email first)
+- `pushSignalToHubSpot()` - pushes signal + contacts, auto-associates
+- `testConnection()` - validates access token
+- Required scopes: companies.read/write, contacts.read/write, deals.read/write
+
+**2.3 HubSpot API Routes**
+- `GET /api/integrations/hubspot` - returns connection status
+- `POST /api/integrations/hubspot` - initiates OAuth or exchanges code
+- `DELETE /api/integrations/hubspot` - disconnects integration
+- `GET /api/integrations/hubspot/callback` - OAuth callback handler
+- `POST /api/integrations/hubspot/push` - pushes signal to HubSpot
+
+### Files Created
+- `src/lib/integrations/hubspot.ts`
+- `src/app/api/integrations/hubspot/route.ts`
+- `src/app/api/integrations/hubspot/callback/route.ts`
+- `src/app/api/integrations/hubspot/push/route.ts`
+
+### Files Modified
+- `src/lib/export.ts` - Added email_status column, JSON export
+- `src/app/api/signals/export/route.ts` - Added all export filters
+- `src/types/index.ts` - Added HubSpot token fields to UserSettings
+
+### Database Migration Required
 ```sql
--- 1. Add API key columns to user_settings
-ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS leadmagic_api_key text;
-ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS prospeo_api_key text;
-ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS enrichment_include_phone boolean DEFAULT false;
-
--- 2. Create signal_contacts table
-CREATE TABLE IF NOT EXISTS signal_contacts (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  signal_id uuid REFERENCES signals(id) ON DELETE CASCADE,
-  full_name text NOT NULL,
-  first_name text,
-  last_name text,
-  job_title text,
-  email text,
-  email_status text,
-  phone text,
-  linkedin_url text,
-  enrichment_source text,
-  is_primary boolean DEFAULT false,
-  created_at timestamptz DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_signal_contacts_signal_id ON signal_contacts(signal_id);
+-- Add HubSpot integration columns to user_settings
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS hubspot_access_token text;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS hubspot_refresh_token text;
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS hubspot_expires_at bigint;
 ```
 
----
-
-## Review
-
-### Summary of Changes
-
-**Phase 1: Search Reliability**
-- Added `withTimeout()` wrapper function to `search.ts`
-- Wrapped Firecrawl search calls with 10s timeout
-- Wrapped Firecrawl scrape calls with 15s timeout
-- Reduced default query count from 3 to 2 for faster searches
-
-**Phase 2: Contact Mapping**
-- Created `contact-mapping.ts` with smart role detection
-- Maps signal types to relevant decision maker titles (e.g., funding → CEO/CFO/VP Sales)
-- Detects department from job titles for hiring signals
-
-**Phase 3: Enrichment Integration**
-- Created LeadMagic API wrapper (finds people by role at company)
-- Created Prospeo API wrapper (finds email + phone)
-- Created enrichment orchestrator that loops through roles (one API call per role)
-- Created `/api/signals/[id]/enrich` endpoint
-- Added API key fields to Settings page (LeadMagic, Prospeo, phone toggle)
-- Added Enrich button to SignalCard (shows when no contacts exist)
-- Added contacts display section to SignalCard (name, title, email/phone/LinkedIn icons)
-- Added Contacts column to SignalsTable
-
-**Phase 4: Export**
-- Updated CSV export to include contact fields
-- One row per contact (signal info repeated)
-
-### Files Created
-- `src/lib/contact-mapping.ts`
-- `src/lib/enrichment/leadmagic.ts`
-- `src/lib/enrichment/prospeo.ts`
-- `src/lib/enrichment/index.ts`
-- `src/app/api/signals/[id]/enrich/route.ts`
-
-### Files Modified
-- `src/lib/search.ts` - timeout wrapper + reduced queries
-- `src/types/index.ts` - added SignalContact interface + UserSettings fields
-- `src/app/(dashboard)/settings/page.tsx` - API key inputs
-- `src/components/dashboard/SignalCard.tsx` - Enrich button + contacts display
-- `src/components/dashboard/SignalsTable.tsx` - contacts column
-- `src/lib/export.ts` - contact fields in CSV
-
-### Next Steps
-1. **Run the database migrations** in Supabase (see SQL above)
-2. Add your LeadMagic and Prospeo API keys in Settings
-3. Test the Enrich button on a signal
-
----
-
-## Signal Insertion Bug Fix (December 2024)
-
-### Problem
-Signals from Firecrawl API were not being inserted into the Supabase signals table.
-
-### Root Causes Identified
-
-1. **BUG 1 (CRITICAL)**: Signals API at `src/app/api/signals/route.ts:21` was filtering on `.eq('user_id', user.id)` but the `user_id` column **does not exist** in the signals table. This caused the API to return 0 results silently.
-
-2. **BUG 2 (DATA LEAK)**: Dashboard and Signals pages used admin client without filtering by user - ALL users could see ALL signals.
-
-3. **BUG 3 (MINOR)**: TypeScript `Source` interface had `updated_at` field that doesn't exist in the database.
-
-4. **BUG 5 (CRITICAL)**: Deduplication only checked within same source/type, but database has GLOBAL UNIQUE constraint on `hash`. This caused batch insert failures when the same signal was scraped from different sources.
-
-### Changes Made
-
-- [x] Created `src/lib/supabase/queries.ts` - Helper functions for user-filtered signals
-- [x] Fixed `src/app/api/signals/route.ts` - Removed invalid user_id filter, added user filtering through sources/search_runs
-- [x] Fixed `src/app/(dashboard)/dashboard/page.tsx` - Now filters signals by user
-- [x] Fixed `src/app/(dashboard)/signals/page.tsx` - Now filters signals by user
-- [x] Fixed `src/app/api/signals/export/route.ts` - Now filters signals by user
-- [x] Fixed `src/types/index.ts` - Removed `updated_at` from Source interface
-- [x] Fixed `src/lib/signals.ts` - Global deduplication (checks ALL hashes, not just current source)
-- [x] Fixed `src/lib/search.ts` - Global deduplication (checks ALL hashes, not just search type)
-
-### Impact
-
-- **Minimal code changes**: Each fix is targeted and only changes necessary lines
-- **No breaking changes**: All existing functionality preserved
-- **Security improvement**: Users now only see their own signals
-- **Data integrity improvement**: Global deduplication prevents hash constraint violations
-
----
-
-## UX Enhancement: Real-Time Streaming (December 2024)
-
-### Goal
-Create a sleek, Clay.com-like experience for enrichment and search with real-time feedback, progress indicators, and clear status displays.
-
-### Changes Made
-
-**Phase 1: Bug Fixes**
-- [x] Fixed contact persistence - contacts now load after page refresh
-- [x] Fixed signal count API - now counts only current user's signals (was counting ALL users)
-
-**Phase 2: SSE Streaming Enrichment**
-- [x] Created `/api/signals/[id]/enrich/stream` - SSE endpoint for real-time enrichment
-- [x] Updated enrichment library with `onProgress` callback
-- [x] Updated SignalCard with live enrichment progress panel
-- [x] Added email status badges (verified=green, risky=red, unknown=gray)
-- [x] Added re-enrich button for existing contacts
-
-**Phase 3: SSE Streaming Search**
-- [x] Created `/api/search/run/stream` - SSE endpoint for real-time search
-- [x] Updated search run page with live progress display
-- [x] Shows signals as they're discovered during search
-- [x] Shows query progress and current action
-
-**Phase 4: Enhanced Notifications**
-- [x] Reduced sidebar polling to 10 seconds (from 30)
-- [x] Added toast notifications when new signals arrive
-
-### Files Created
-- `src/app/api/signals/[id]/enrich/stream/route.ts` - SSE enrichment endpoint
-- `src/app/api/search/run/stream/route.ts` - SSE search endpoint
-
-### Files Modified
-- `src/lib/supabase/queries.ts` - Added contacts join to signal queries
-- `src/app/api/signals/route.ts` - Added contacts join
-- `src/app/api/signals/count/route.ts` - Fixed user filtering
-- `src/lib/enrichment/index.ts` - Added onProgress callback
-- `src/components/dashboard/SignalCard.tsx` - SSE enrichment + progress panel + email badges + re-enrich
-- `src/app/(dashboard)/search/[id]/run/page.tsx` - SSE search + live signals
-- `src/components/dashboard/Sidebar.tsx` - Faster polling + toast notifications
-
-### Deployment
-- Successfully deployed to https://signal-mentis.vercel.app
-
----
-
-## UK Government Data Sources Integration (December 2024)
-
-### Goal
-Add free UK Government APIs as data sources for automatic signal detection.
-
-### Sources Added
-
-**1. Contracts Finder API** (FREE)
-- Fetches UK public sector contract awards
-- OCDS format (Open Contracting Data Standard)
-- Signal type: `contract_awarded`
-- File: `src/lib/contracts-finder.ts`
-
-**2. Find a Tender Service API** (FREE)
-- Fetches high-value UK contracts (>£118,000)
-- Replaced EU TED for UK post-Brexit
-- Signal type: `contract_awarded`
-- File: `src/lib/find-a-tender.ts`
-
-**3. Companies House API** (FREE - requires key)
-- Detects leadership changes (director appointments)
-- Company verification for enrichment
-- Signal type: `leadership_change`
-- File: `src/lib/companies-house.ts`
-- Requires: `COMPANIES_HOUSE_API_KEY` in env
-
-**4. Planning Data API** (FREE)
-- Fetches planning applications (England only)
-- Government beta service
-- Signal types: `planning_approved`, `planning_submitted`
-- File: `src/lib/planning-data.ts`
-
-### Implementation
-
-- All sources sync automatically with daily cron job
-- New endpoint: `/api/cron/government` for manual sync
-- Integrated into existing daily cron at `/api/cron/daily`
-- Uses existing signal deduplication (hash fingerprint)
-
-### Files Created
-- `src/lib/contracts-finder.ts`
-- `src/lib/find-a-tender.ts`
-- `src/lib/companies-house.ts`
-- `src/lib/planning-data.ts`
-- `src/app/api/cron/government/route.ts`
-
-### Files Modified
-- `src/app/api/cron/daily/route.ts` - Added government sync calls
-
-### Environment Variables Needed
+### Environment Variables Required
 ```
-COMPANIES_HOUSE_API_KEY=your_key_here  # Get free at developer.company-information.service.gov.uk
-FIND_A_TENDER_API_KEY=your_key_here    # Optional, get free at find-tender.service.gov.uk
+HUBSPOT_CLIENT_ID=your_hubspot_client_id
+HUBSPOT_CLIENT_SECRET=your_hubspot_client_secret
+NEXT_PUBLIC_APP_URL=https://your-app-url.com
 ```
 
-### Deployment
-- Successfully deployed to https://signal-mentis.vercel.app
+### Build Status
+- Successfully builds with `npm run build`
+- All new routes included: /api/integrations/hubspot/*
+- No TypeScript errors
+

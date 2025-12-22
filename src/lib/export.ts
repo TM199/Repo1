@@ -2,6 +2,15 @@ import { Signal, SignalContact } from '@/types';
 
 type SignalWithContacts = Signal & { contacts?: SignalContact[] };
 
+const escapeField = (value: string | null | undefined): string => {
+  if (!value) return '';
+  const str = String(value);
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+};
+
 export function signalsToCsv(signals: SignalWithContacts[]): string {
   const headers = [
     'company_name',
@@ -17,18 +26,10 @@ export function signalsToCsv(signals: SignalWithContacts[]): string {
     'contact_name',
     'contact_title',
     'contact_email',
+    'contact_email_status',
     'contact_phone',
     'contact_linkedin',
   ];
-
-  const escapeField = (value: string | null | undefined): string => {
-    if (!value) return '';
-    const str = String(value);
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
-  };
 
   const rows: string[] = [];
 
@@ -54,15 +55,20 @@ export function signalsToCsv(signals: SignalWithContacts[]): string {
           escapeField(contact.full_name),
           escapeField(contact.job_title),
           escapeField(contact.email),
+          escapeField(contact.email_status),
           escapeField(contact.phone),
           escapeField(contact.linkedin_url),
         ].join(','));
       }
     } else {
       // Signal without contacts
-      rows.push([...baseRow, '', '', '', '', ''].join(','));
+      rows.push([...baseRow, '', '', '', '', '', ''].join(','));
     }
   }
 
   return [headers.join(','), ...rows].join('\n');
+}
+
+export function signalsToJson(signals: SignalWithContacts[]): string {
+  return JSON.stringify(signals, null, 2);
 }

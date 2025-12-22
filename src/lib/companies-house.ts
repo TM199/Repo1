@@ -9,6 +9,7 @@
  */
 
 import { createAdminClient } from './supabase/server';
+import { getIndustryFromSicCodes } from './sic-codes';
 
 const BASE_URL = 'https://api.company-information.service.gov.uk';
 
@@ -109,6 +110,7 @@ interface LeadershipSignal {
   signal_detail: string;
   signal_url: string;
   location: string | null;
+  industry: string | null;
   officer_name: string;
   officer_role: string;
   appointed_on: string;
@@ -119,13 +121,10 @@ function generateFingerprint(signal: LeadershipSignal): string {
   return Buffer.from(str).toString('base64').slice(0, 64);
 }
 
-function extractDomainFromName(companyName: string): string {
-  const cleaned = companyName
-    .toLowerCase()
-    .replace(/\s+(ltd|limited|plc|llp|inc|corp|co|company)\.?$/i, '')
-    .replace(/[^a-z0-9]/g, '')
-    .slice(0, 30);
-  return cleaned ? `${cleaned}.co.uk` : '';
+// Don't guess domains - return empty string
+// Domain can be looked up via enrichment or Companies House website link
+function extractDomainFromName(): string {
+  return '';
 }
 
 function formatOfficerRole(role: string): string {
@@ -262,49 +261,102 @@ export async function getCompanyOfficers(companyNumber: string): Promise<{
 }
 
 /**
- * Fetch recent officer appointments across all companies
- * Note: Companies House doesn't have a direct "recent appointments" endpoint,
- * so we search for recently incorporated companies and check their officers.
+ * Get filing history for a company to detect recent officer changes
  */
-export async function fetchRecentAppointments(daysBack: number = 1): Promise<{
+async function getFilingHistory(companyNumber: string, category?: string): Promise<{
+  filings: Array<{
+    category: string;
+    type: string;
+    date: string;
+    description: string;
+    description_values?: Record<string, string>;
+    links?: { self?: string; document_metadata?: string };
+  }>;
+  error?: string;
+}> {
+  try {
+    let url = `${BASE_URL}/company/${companyNumber}/filing-history?items_per_page=50`;
+    if (category) {
+      url += `&category=${category}`;
+    }
+
+    const response = await fetch(url, { headers: getAuthHeader() });
+
+    if (!response.ok) {
+      return { filings: [] };
+    }
+
+    const data = await response.json();
+    return { filings: data.items || [] };
+  } catch (error) {
+    return {
+      filings: [],
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
+/**
+ * Fetch recent officer appointments by checking filing history
+ * Searches active UK companies and filters for recent officer appointment filings
+ */
+export async function fetchRecentAppointments(daysBack: number = 7): Promise<{
   signals: LeadershipSignal[];
   error?: string;
 }> {
-  // Since Companies House doesn't provide a direct endpoint for recent appointments,
-  // we'll use the advanced search for recently incorporated companies
-  // and look at their officers
-
   const fromDate = new Date();
   fromDate.setDate(fromDate.getDate() - daysBack);
   const fromDateStr = fromDate.toISOString().split('T')[0];
 
   try {
-    // Search for recently incorporated companies (a proxy for new appointments)
-    const url = `${BASE_URL}/advanced-search/companies?incorporated_from=${fromDateStr}&size=50`;
+    // Strategy: Search for active companies with recent activity
+    // The advanced-search endpoint with filed_from parameter returns companies with recent filings
+    const url = `${BASE_URL}/advanced-search/companies?company_status=active&size=100`;
 
-    console.log(`[Companies House] Fetching new companies from ${fromDateStr}`);
+    console.log(`[Companies House] Fetching active companies to check for recent appointments`);
 
-    const response = await fetch(url, {
-      headers: getAuthHeader(),
-    });
+    const response = await fetch(url, { headers: getAuthHeader() });
 
     if (!response.ok) {
-      // Advanced search might not be available without higher tier access
-      console.log('[Companies House] Advanced search not available, skipping');
-      return { signals: [] };
+      // Advanced search might not be available - fall back to alternative approach
+      console.log('[Companies House] Advanced search not available, trying alternative approach');
+      return await fetchRecentAppointmentsAlternative(daysBack);
     }
 
     const data = await response.json();
     const allSignals: LeadershipSignal[] = [];
+    const processedCompanies = new Set<string>();
 
-    // For each new company, get their officers
-    for (const company of (data.items || []).slice(0, 20)) { // Limit to avoid rate limits
+    // Process companies and look for recent officer appointments
+    for (const company of (data.items || []).slice(0, 30)) {
+      if (processedCompanies.has(company.company_number)) continue;
+      processedCompanies.add(company.company_number);
+
+      // Get officers for this company
       const { officers } = await getCompanyOfficers(company.company_number);
 
+      // Get company details for SIC codes (only if we have appointments to add)
+      let industry: string | null = null;
+      let companyDetailsChecked = false;
+
       for (const officer of officers) {
-        // Only include executive roles and recent appointments
+        // Only include executive roles
         if (!isExecutiveRole(officer.officer_role)) continue;
-        if (officer.resigned_on) continue; // Skip resigned officers
+        if (officer.resigned_on) continue;
+
+        // Check if appointment is recent
+        if (!officer.appointed_on) continue;
+        const appointedDate = new Date(officer.appointed_on);
+        if (appointedDate < fromDate) continue;
+
+        // Fetch company details once to get SIC codes
+        if (!companyDetailsChecked) {
+          companyDetailsChecked = true;
+          const { company: companyDetails } = await getCompanyDetails(company.company_number);
+          if (companyDetails?.sic_codes) {
+            industry = getIndustryFromSicCodes(companyDetails.sic_codes);
+          }
+        }
 
         const location = company.registered_office_address?.locality ||
           company.registered_office_address?.region ||
@@ -312,23 +364,24 @@ export async function fetchRecentAppointments(daysBack: number = 1): Promise<{
 
         allSignals.push({
           company_name: company.company_name,
-          company_domain: extractDomainFromName(company.company_name),
+          company_domain: extractDomainFromName(),
           company_number: company.company_number,
           signal_title: `${officer.name} appointed as ${formatOfficerRole(officer.officer_role)}`,
-          signal_detail: `New ${formatOfficerRole(officer.officer_role)} at ${company.company_name}`,
+          signal_detail: `New ${formatOfficerRole(officer.officer_role)} at ${company.company_name}. Appointed ${officer.appointed_on}.`,
           signal_url: `https://find-and-update.company-information.service.gov.uk/company/${company.company_number}/officers`,
           location,
+          industry,
           officer_name: officer.name,
           officer_role: officer.officer_role,
           appointed_on: officer.appointed_on,
         });
       }
 
-      // Rate limiting - wait between requests
+      // Rate limiting
       await new Promise(resolve => setTimeout(resolve, 200));
     }
 
-    console.log(`[Companies House] Found ${allSignals.length} officer appointments`);
+    console.log(`[Companies House] Found ${allSignals.length} recent officer appointments`);
     return { signals: allSignals };
   } catch (error) {
     console.error('[Companies House] Error:', error);
@@ -336,6 +389,82 @@ export async function fetchRecentAppointments(daysBack: number = 1): Promise<{
       signals: [],
       error: error instanceof Error ? error.message : 'Unknown error'
     };
+  }
+}
+
+/**
+ * Alternative approach: Use filing history category filter
+ * Less efficient but works without advanced search access
+ */
+async function fetchRecentAppointmentsAlternative(daysBack: number): Promise<{
+  signals: LeadershipSignal[];
+  error?: string;
+}> {
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - daysBack);
+
+  try {
+    // Search for some well-known active companies to get a sample
+    // In production, you'd want to maintain a list of companies to monitor
+    const sampleQueries = ['technology', 'construction', 'healthcare', 'finance'];
+    const allSignals: LeadershipSignal[] = [];
+    const processedCompanies = new Set<string>();
+
+    for (const query of sampleQueries) {
+      const { companies } = await searchCompanies(query, 10);
+
+      for (const company of companies) {
+        if (processedCompanies.has(company.company_number)) continue;
+        if (company.company_status !== 'active') continue;
+        processedCompanies.add(company.company_number);
+
+        const { officers } = await getCompanyOfficers(company.company_number);
+
+        // Get company details for SIC codes (only if we have appointments to add)
+        let industry: string | null = null;
+        let companyDetailsChecked = false;
+
+        for (const officer of officers) {
+          if (!isExecutiveRole(officer.officer_role)) continue;
+          if (officer.resigned_on) continue;
+          if (!officer.appointed_on) continue;
+
+          const appointedDate = new Date(officer.appointed_on);
+          if (appointedDate < fromDate) continue;
+
+          // Fetch company details once to get SIC codes
+          if (!companyDetailsChecked) {
+            companyDetailsChecked = true;
+            const { company: companyDetails } = await getCompanyDetails(company.company_number);
+            if (companyDetails?.sic_codes) {
+              industry = getIndustryFromSicCodes(companyDetails.sic_codes);
+            }
+          }
+
+          allSignals.push({
+            company_name: company.company_name,
+            company_domain: extractDomainFromName(),
+            company_number: company.company_number,
+            signal_title: `${officer.name} appointed as ${formatOfficerRole(officer.officer_role)}`,
+            signal_detail: `New ${formatOfficerRole(officer.officer_role)} at ${company.company_name}. Appointed ${officer.appointed_on}.`,
+            signal_url: `https://find-and-update.company-information.service.gov.uk/company/${company.company_number}/officers`,
+            location: company.address?.locality || null,
+            industry,
+            officer_name: officer.name,
+            officer_role: officer.officer_role,
+            appointed_on: officer.appointed_on,
+          });
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+
+    console.log(`[Companies House] (Alt) Found ${allSignals.length} recent appointments`);
+    return { signals: allSignals };
+  } catch (error) {
+    console.error('[Companies House] Alternative approach error:', error);
+    return { signals: [], error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }
 
@@ -396,7 +525,7 @@ export async function syncLeadershipChanges(daysBack: number = 1): Promise<{
     signal_detail: signal.signal_detail,
     signal_url: signal.signal_url,
     location: signal.location,
-    industry: null,
+    industry: signal.industry,
     hash: generateFingerprint(signal),
     detected_at: new Date().toISOString(),
     is_new: true,
@@ -404,7 +533,7 @@ export async function syncLeadershipChanges(daysBack: number = 1): Promise<{
 
   const { error: insertError } = await supabase
     .from('signals')
-    .insert(signalsToInsert);
+    .upsert(signalsToInsert, { onConflict: 'hash', ignoreDuplicates: true });
 
   if (insertError) {
     console.error('[Companies House] Insert error:', insertError);

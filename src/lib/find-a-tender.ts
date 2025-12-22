@@ -11,8 +11,29 @@
  */
 
 import { createAdminClient } from './supabase/server';
+import { extractDomainFromOCDSParty } from './domain-resolver';
 
 const BASE_URL = 'https://www.find-tender.service.gov.uk/api/1.0';
+
+interface FTSParty {
+  id: string;
+  name: string;
+  identifier?: { scheme: string; id: string; uri?: string };
+  roles: string[];
+  address?: {
+    streetAddress?: string;
+    locality?: string;
+    region?: string;
+    postalCode?: string;
+    countryName?: string;
+  };
+  contactPoint?: {
+    name?: string;
+    email?: string;
+    telephone?: string;
+    url?: string;
+  };
+}
 
 interface FTSRelease {
   ocid: string;
@@ -21,19 +42,7 @@ interface FTSRelease {
   tag: string[];
   language: string;
   initiationType: string;
-  parties: Array<{
-    id: string;
-    name: string;
-    identifier?: { scheme: string; id: string };
-    roles: string[];
-    address?: {
-      streetAddress?: string;
-      locality?: string;
-      region?: string;
-      postalCode?: string;
-      countryName?: string;
-    };
-  }>;
+  parties: FTSParty[];
   buyer?: {
     id: string;
     name: string;
@@ -84,13 +93,18 @@ function generateFingerprint(signal: TenderSignal): string {
   return Buffer.from(str).toString('base64').slice(0, 64);
 }
 
-function extractDomainFromName(companyName: string): string {
-  const cleaned = companyName
-    .toLowerCase()
-    .replace(/\s+(ltd|limited|plc|llp|inc|corp|co|company)\.?$/i, '')
-    .replace(/[^a-z0-9]/g, '')
-    .slice(0, 30);
-  return cleaned ? `${cleaned}.co.uk` : '';
+function extractDomainFromSupplier(release: FTSRelease, supplierName: string): string {
+  // Try to find the supplier party and extract domain from contact info
+  const supplierParty = release.parties?.find(
+    p => p.roles.includes('supplier') && p.name === supplierName
+  );
+
+  if (supplierParty) {
+    return extractDomainFromOCDSParty(supplierParty);
+  }
+
+  // Return empty - don't guess
+  return '';
 }
 
 function parseFTSRelease(release: FTSRelease): TenderSignal[] {
@@ -117,7 +131,7 @@ function parseFTSRelease(release: FTSRelease): TenderSignal[] {
 
       signals.push({
         company_name: supplier.name,
-        company_domain: extractDomainFromName(supplier.name),
+        company_domain: extractDomainFromSupplier(release, supplier.name),
         signal_title: `Won major contract: ${tenderTitle}`,
         signal_detail: description.slice(0, 500) + (description.length > 500 ? '...' : ''),
         signal_url: `https://www.find-tender.service.gov.uk/Notice/${release.ocid}`,
@@ -140,11 +154,12 @@ export async function fetchFTSAwards(daysBack: number = 1): Promise<{
 }> {
   const fromDate = new Date();
   fromDate.setDate(fromDate.getDate() - daysBack);
-  const fromDateStr = fromDate.toISOString().split('T')[0];
+  // FTS API requires full datetime format: YYYY-MM-DDTHH:MM:SS
+  const fromDateStr = fromDate.toISOString().split('.')[0];
 
   try {
-    // OCDS release packages endpoint with date filter
-    const url = `${BASE_URL}/ocdsReleasePackages?publishedFrom=${fromDateStr}&size=100`;
+    // OCDS release packages endpoint - uses updatedFrom parameter
+    const url = `${BASE_URL}/ocdsReleasePackages?updatedFrom=${fromDateStr}`;
 
     console.log(`[Find a Tender] Fetching awards from ${fromDateStr}`);
 
@@ -245,7 +260,7 @@ export async function syncFTSAwards(daysBack: number = 1): Promise<{
 
   const { error: insertError } = await supabase
     .from('signals')
-    .insert(signalsToInsert);
+    .upsert(signalsToInsert, { onConflict: 'hash', ignoreDuplicates: true });
 
   if (insertError) {
     console.error('[Find a Tender] Insert error:', insertError);

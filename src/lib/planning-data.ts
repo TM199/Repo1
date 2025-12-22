@@ -77,15 +77,10 @@ function extractCompanyFromDescription(description: string): string {
   return 'Unknown Applicant';
 }
 
-function extractDomainFromName(companyName: string): string {
-  if (companyName === 'Unknown Applicant') return '';
-
-  const cleaned = companyName
-    .toLowerCase()
-    .replace(/\s+(ltd|limited|plc|llp|inc|corp|co|company)\.?$/i, '')
-    .replace(/[^a-z0-9]/g, '')
-    .slice(0, 30);
-  return cleaned ? `${cleaned}.co.uk` : '';
+// Don't guess domains - return empty string for unknown applicants
+// Domain can be looked up via enrichment later
+function extractDomainFromName(): string {
+  return '';
 }
 
 function formatDecision(decision: string | null | undefined): string {
@@ -184,7 +179,7 @@ export async function fetchPlanningApplications(daysBack: number = 7): Promise<{
 
       allSignals.push({
         company_name: companyName,
-        company_domain: extractDomainFromName(companyName),
+        company_domain: extractDomainFromName(),
         signal_title: isApproved
           ? `Planning approved: ${description.slice(0, 100)}`
           : `Planning submitted: ${description.slice(0, 100)}`,
@@ -267,7 +262,7 @@ export async function syncPlanningApplications(daysBack: number = 7): Promise<{
 
   const { error: insertError } = await supabase
     .from('signals')
-    .insert(signalsToInsert);
+    .upsert(signalsToInsert, { onConflict: 'hash', ignoreDuplicates: true });
 
   if (insertError) {
     console.error('[Planning Data] Insert error:', insertError);

@@ -8,6 +8,7 @@
  */
 
 import { createAdminClient } from './supabase/server';
+import { extractDomainFromOCDSParty } from './domain-resolver';
 
 const BASE_URL = 'https://www.contractsfinder.service.gov.uk/Published';
 
@@ -107,14 +108,18 @@ function generateFingerprint(signal: ContractSignal): string {
   return Buffer.from(str).toString('base64').slice(0, 64);
 }
 
-function extractDomainFromName(companyName: string): string {
-  // Simple domain extraction - remove common suffixes and create a guess
-  const cleaned = companyName
-    .toLowerCase()
-    .replace(/\s+(ltd|limited|plc|llp|inc|corp|co|company)\.?$/i, '')
-    .replace(/[^a-z0-9]/g, '')
-    .slice(0, 30);
-  return cleaned ? `${cleaned}.co.uk` : '';
+function extractDomainFromSupplier(release: OCDSRelease, supplierName: string): string {
+  // Try to find the supplier party and extract domain from contact info
+  const supplierParty = release.parties?.find(
+    p => p.roles.includes('supplier') && p.name === supplierName
+  );
+
+  if (supplierParty) {
+    return extractDomainFromOCDSParty(supplierParty);
+  }
+
+  // Return empty - don't guess
+  return '';
 }
 
 function parseOCDSRelease(release: OCDSRelease): ContractSignal[] {
@@ -142,7 +147,7 @@ function parseOCDSRelease(release: OCDSRelease): ContractSignal[] {
 
       signals.push({
         company_name: supplier.name,
-        company_domain: extractDomainFromName(supplier.name),
+        company_domain: extractDomainFromSupplier(release, supplier.name),
         signal_title: `Won contract: ${tenderTitle}`,
         signal_detail: description.slice(0, 500) + (description.length > 500 ? '...' : ''),
         signal_url: `https://www.contractsfinder.service.gov.uk/Notice/${release.ocid}`,
@@ -168,8 +173,8 @@ export async function fetchContractAwards(daysBack: number = 1): Promise<{
   const fromDateStr = fromDate.toISOString().split('T')[0];
 
   try {
-    // Search for award stage notices
-    const url = `${BASE_URL}/Notice/OCDS/Search?publishedFrom=${fromDateStr}&stages=award&size=100`;
+    // Search for award stage notices - use Notices (plural) endpoint
+    const url = `${BASE_URL}/Notices/OCDS/Search?publishedFrom=${fromDateStr}&stages=award&size=100`;
 
     console.log(`[Contracts Finder] Fetching awards from ${fromDateStr}`);
 
@@ -265,7 +270,7 @@ export async function syncContractAwards(daysBack: number = 1): Promise<{
 
   const { error: insertError } = await supabase
     .from('signals')
-    .insert(signalsToInsert);
+    .upsert(signalsToInsert, { onConflict: 'hash', ignoreDuplicates: true });
 
   if (insertError) {
     console.error('[Contracts Finder] Insert error:', insertError);
