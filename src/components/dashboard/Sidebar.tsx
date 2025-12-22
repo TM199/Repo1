@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, Radio, Zap, Download, Settings, Plus, Search, Building2 } from 'lucide-react';
+import { LayoutDashboard, Radio, Zap, Download, Settings, Plus, Search, Building2, Flame } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -13,6 +13,7 @@ const navItems = [
   { href: '/sources', label: 'Sources', icon: Radio },
   { href: '/search', label: 'AI Search', icon: Search },
   { href: '/agency', label: 'Agency Finder', icon: Building2 },
+  { href: '/pain', label: 'Companies in Pain', icon: Flame },
   { href: '/signals', label: 'Signals', icon: Zap, showBadge: true },
   { href: '/export', label: 'Export', icon: Download },
   { href: '/settings', label: 'Settings', icon: Settings },
