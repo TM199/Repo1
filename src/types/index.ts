@@ -164,3 +164,11 @@ export interface ExtractedSignal {
   signal_detail: string;
   signal_url: string;
 }
+
+export interface AgencyAnalysis {
+  industries: string[];
+  roleTypes: string[];
+  focus: ('permanent' | 'contract' | 'temp' | 'mixed')[];
+  confidence: number;
+  summary: string;
+}

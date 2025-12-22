@@ -118,6 +118,31 @@ Based on comprehensive business analysis. Focus: Make the product viable for sal
 
 ---
 
+## Phase 5: Agency Finder Feature - COMPLETED
+
+New feature to analyze recruitment agency websites and generate targeted signals.
+
+### 5.1 Core Infrastructure
+- [x] Create `src/lib/agency-signal-mapping.ts` - Hiring urgency-based signal prioritization
+- [x] Create `src/lib/agency-analyzer.ts` - Firecrawl website analysis with industry detection
+- [x] Add `AgencyAnalysis` interface to `src/types/index.ts`
+
+### 5.2 API Endpoints
+- [x] Create `/api/agency/analyze/route.ts` - Analyze agency website
+- [x] Create `/api/agency/search/route.ts` - SSE streaming signal search (max 10 signals)
+
+### 5.3 UI Components
+- [x] Create `src/app/(dashboard)/agency/page.tsx` - Main page
+- [x] Create `src/app/(dashboard)/agency/AgencyFinderClient.tsx` - 4-step wizard UI
+- [x] Create `src/components/dashboard/AgencyResultsPanel.tsx` - Results with CSV export
+- [x] Update `src/components/dashboard/Sidebar.tsx` - Added "Agency Finder" nav item
+
+### 5.4 Integration
+- [x] CSV export for agency signals (built into AgencyResultsPanel)
+- [x] Build verified successfully
+
+---
+
 ## Previously Completed (Reference)
 
 ### Signal Detection Infrastructure
@@ -353,4 +378,51 @@ ALTER TABLE signal_contacts ADD COLUMN IF NOT EXISTS seniority text;
 
 ### Build Status
 - Successfully builds with `npm run build`
+
+---
+
+## Review - Phase 5 Agency Finder
+
+### Summary of Changes Made
+
+**5.1 Agency Signal Mapping (`src/lib/agency-signal-mapping.ts`)**
+- Created hiring urgency classification for all signal types: immediate, short_term, medium_term, speculative
+- `getSignalTypesForIndustries()` - Returns signals sorted by hiring urgency
+- `getHighUrgencySignals()` - Returns only immediate + short_term signals
+- `getSignalHiringContext()` - Human-readable explanation of why each signal indicates hiring
+
+**5.2 Agency Analyzer (`src/lib/agency-analyzer.ts`)**
+- Uses Firecrawl to scrape agency websites
+- Extracts: industries, role types, recruitment focus (perm/contract/temp)
+- Normalizes extracted industries to match system values
+- Calculates confidence score based on extraction quality
+
+**5.3 API Endpoints**
+- `POST /api/agency/analyze` - Analyzes agency website, returns detected specializations
+- `POST /api/agency/search` - SSE streaming endpoint that finds 5-10 signals
+
+**5.4 UI Components**
+- 4-step wizard: Input → Review → Searching → Results
+- Industry selection with badges
+- Signal type selection with urgency indicators
+- Location selection
+- Real-time SSE progress display
+- Results panel with CSV export
+
+### Files Created
+- `src/lib/agency-signal-mapping.ts`
+- `src/lib/agency-analyzer.ts`
+- `src/app/api/agency/analyze/route.ts`
+- `src/app/api/agency/search/route.ts`
+- `src/app/(dashboard)/agency/page.tsx`
+- `src/app/(dashboard)/agency/AgencyFinderClient.tsx`
+- `src/components/dashboard/AgencyResultsPanel.tsx`
+
+### Files Modified
+- `src/types/index.ts` - Added AgencyAnalysis interface
+- `src/components/dashboard/Sidebar.tsx` - Added Agency Finder nav item
+
+### Build Status
+- Successfully builds with `npm run build`
+- New routes: /agency, /api/agency/analyze, /api/agency/search
 
