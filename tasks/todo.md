@@ -262,3 +262,53 @@ NEXT_PUBLIC_APP_URL=https://your-app-url.com
 - All new routes included: /api/integrations/hubspot/*
 - No TypeScript errors
 
+---
+
+## Review - Phase 3 Completion
+
+### Summary of Changes Made
+
+**3.1 SIC Code to Industry Mapping (sic-codes.ts)**
+- Created comprehensive SIC code mapping for UK industries
+- `getIndustryFromSicCode()` - maps individual SIC codes to industry names
+- `getIndustryFromSicCodes()` - handles multiple SIC codes, returns first match
+- 100+ specific SIC codes mapped, plus section-level fallbacks
+
+**3.2 Industry Detection for Companies House (companies-house.ts)**
+- Updated `fetchRecentAppointments()` to fetch company details for SIC codes
+- Updated alternative approach with same industry detection
+- Industry field now populated in signals from Companies House
+
+**3.3 Industry Filter (SignalsPageClient.tsx, route.ts)**
+- Added industry dropdown filter with 15 common industries
+- Added `industry` query parameter to signals API
+- Filter uses ilike for partial matching
+
+**3.4 Signal Confidence Scoring (signal-scoring.ts)**
+- Created scoring algorithm (0-100 points):
+  - Source reliability: 0-40 points (government highest)
+  - Domain verification: 0-30 points
+  - Data completeness: 0-30 points
+- Score labels: High (70+), Medium (40-69), Low (<40)
+- Added confidence badge to SignalCard with tooltip
+
+**3.5 HubSpot UI Components**
+- Settings page: Connect/disconnect HubSpot section
+- Signal cards: "Push to HubSpot" button (orange upload icon)
+- Real-time connection status display
+
+### Files Created
+- `src/lib/sic-codes.ts` - SIC code to industry mapping
+- `src/lib/signal-scoring.ts` - Confidence scoring algorithm
+
+### Files Modified
+- `src/app/(dashboard)/signals/SignalsPageClient.tsx` - Industry filter
+- `src/app/api/signals/route.ts` - Industry query parameter
+- `src/lib/companies-house.ts` - Industry detection
+- `src/components/dashboard/SignalCard.tsx` - Confidence badge + HubSpot button
+- `src/app/(dashboard)/settings/page.tsx` - HubSpot connection section
+
+### Build Status
+- Successfully builds with `npm run build`
+- Deployed to https://signal-mentis.vercel.app
+
