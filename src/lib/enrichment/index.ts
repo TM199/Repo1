@@ -2,15 +2,47 @@ import { findContactByRole } from './leadmagic';
 import { findEmail, findPhone } from './prospeo';
 import { getTargetRoles } from '../contact-mapping';
 
+export type SeniorityLevel = 'executive' | 'senior' | 'manager' | 'individual' | 'unknown';
+
 export interface EnrichedContact {
   full_name: string;
   first_name: string;
   last_name: string;
   job_title: string;
+  seniority: SeniorityLevel;
   email: string | null;
   email_status: string | null;
   phone: string | null;
   linkedin_url: string | null;
+}
+
+/**
+ * Detect seniority level from job title
+ */
+function detectSeniority(jobTitle: string): SeniorityLevel {
+  const title = jobTitle.toLowerCase();
+
+  // Executive level
+  if (/\b(ceo|cfo|cto|coo|cmo|chief|president|founder|owner|partner)\b/.test(title)) {
+    return 'executive';
+  }
+
+  // Senior level
+  if (/\b(vp|vice president|director|head of|principal|senior)\b/.test(title)) {
+    return 'senior';
+  }
+
+  // Manager level
+  if (/\b(manager|lead|supervisor|coordinator|team lead)\b/.test(title)) {
+    return 'manager';
+  }
+
+  // Individual contributor
+  if (/\b(analyst|engineer|developer|specialist|associate|consultant|officer)\b/.test(title)) {
+    return 'individual';
+  }
+
+  return 'unknown';
 }
 
 export type EnrichmentEvent =
@@ -84,6 +116,7 @@ export async function enrichSignal(
       first_name: contact.first_name,
       last_name: contact.last_name,
       job_title: role,
+      seniority: detectSeniority(role),
       email: emailResult?.email || null,
       email_status: emailResult?.status || null,
       phone,

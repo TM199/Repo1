@@ -25,6 +25,7 @@ export function signalsToCsv(signals: SignalWithContacts[]): string {
     'detected_at',
     'contact_name',
     'contact_title',
+    'contact_seniority',
     'contact_email',
     'contact_email_status',
     'contact_phone',
@@ -54,6 +55,7 @@ export function signalsToCsv(signals: SignalWithContacts[]): string {
           ...baseRow,
           escapeField(contact.full_name),
           escapeField(contact.job_title),
+          escapeField(contact.seniority),
           escapeField(contact.email),
           escapeField(contact.email_status),
           escapeField(contact.phone),
@@ -62,7 +64,7 @@ export function signalsToCsv(signals: SignalWithContacts[]): string {
       }
     } else {
       // Signal without contacts
-      rows.push([...baseRow, '', '', '', '', '', ''].join(','));
+      rows.push([...baseRow, '', '', '', '', '', '', ''].join(','));
     }
   }
 

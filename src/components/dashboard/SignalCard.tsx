@@ -414,7 +414,19 @@ export function SignalCard({ signal }: SignalCardProps) {
                 return (
                   <div key={contact.id} className="flex items-center justify-between gap-2 text-xs">
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-[#0A2540] truncate">{contact.full_name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-medium text-[#0A2540] truncate">{contact.full_name}</p>
+                        {contact.seniority && contact.seniority !== 'unknown' && (
+                          <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
+                            contact.seniority === 'executive' ? 'bg-purple-100 text-purple-700' :
+                            contact.seniority === 'senior' ? 'bg-blue-100 text-blue-700' :
+                            contact.seniority === 'manager' ? 'bg-green-100 text-green-700' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>
+                            {contact.seniority}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[#6B7C93] truncate">{contact.job_title}</p>
                     </div>
                     <div className="flex items-center gap-1">

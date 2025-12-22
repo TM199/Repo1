@@ -62,6 +62,7 @@ export async function POST(
         first_name: c.first_name,
         last_name: c.last_name,
         job_title: c.job_title,
+        seniority: c.seniority,
         email: c.email,
         email_status: c.email_status,
         phone: c.phone,

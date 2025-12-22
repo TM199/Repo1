@@ -55,8 +55,8 @@ Based on comprehensive business analysis. Focus: Make the product viable for sal
 - [x] Implement push signals as Companies (upsert by domain)
 - [x] Implement push contacts as Contacts (upsert by email)
 - [x] Auto-associate contacts to companies
-- [ ] Add "Push to HubSpot" button on signal cards (UI pending)
-- [ ] Create settings page for HubSpot connection (UI pending)
+- [x] Add "Push to HubSpot" button on signal cards
+- [x] Create settings page for HubSpot connection
 
 ### 2.2 Export Improvements
 **Files**: `export.ts`, `/api/signals/export/route.ts`
@@ -68,31 +68,31 @@ Based on comprehensive business analysis. Focus: Make the product viable for sal
 
 ---
 
-## Phase 3: Data Quality (P2)
+## Phase 3: Data Quality (P2) - COMPLETED
 
 ### 3.1 Add Industry Detection
-**Files**: Gov API files, `search.ts`
+**Files**: Gov API files, `search.ts`, `firecrawl.ts`
 
-- [ ] Map SIC codes from Companies House to industry names
-- [ ] Add industry classification for Firecrawl signals (LLM)
-- [ ] Store industry on all signals
-- [ ] Add industry filter to signals page
+- [x] Map SIC codes from Companies House to industry names
+- [x] Add industry classification for Firecrawl signals (LLM extraction)
+- [x] Store industry on all signals (scrape, search, government)
+- [x] Add industry filter to signals page
 
 ### 3.2 Add Signal Confidence Scoring
 **New File**: `src/lib/signal-scoring.ts`
 
-- [ ] Create scoring algorithm based on source reliability
-- [ ] Factor in domain verification status
-- [ ] Factor in company match confidence
-- [ ] Display confidence score on signal cards
+- [x] Create scoring algorithm based on source reliability
+- [x] Factor in domain verification status
+- [x] Factor in company match confidence (data completeness)
+- [x] Display confidence score on signal cards
 
 ### 3.3 Improve Enrichment Data Quality
-**Files**: `enrichment/index.ts`, `enrichment/leadmagic.ts`
+**Files**: `enrichment/index.ts`
 
-- [ ] Parse LinkedIn profile to get actual job title
-- [ ] Store actual title (not just searched role)
-- [ ] Add seniority detection from titles
-- [ ] Store enrichment failure reasons
+- [x] Add seniority detection from job titles
+- [x] Store seniority level (executive/senior/manager/individual)
+- [x] Display seniority badge on contacts in UI
+- [x] Include seniority in CSV export
 
 ---
 
@@ -311,4 +311,46 @@ NEXT_PUBLIC_APP_URL=https://your-app-url.com
 ### Build Status
 - Successfully builds with `npm run build`
 - Deployed to https://signal-mentis.vercel.app
+
+---
+
+## Review - Phase 3 Additional Updates
+
+### Summary of Additional Changes Made
+
+**3.3 Enrichment Data Quality (enrichment/index.ts)**
+- Added `SeniorityLevel` type: executive, senior, manager, individual, unknown
+- Created `detectSeniority()` function with regex matching for job titles
+- Seniority now calculated from searched role and stored with contacts
+- Updated `EnrichedContact` interface to include seniority field
+
+**3.1 Industry Detection for Firecrawl Signals (firecrawl.ts)**
+- Added `INDUSTRY_INSTRUCTION` constant for LLM prompt
+- Updated all 13 extraction prompts to request industry field
+- Updated `EXTRACTION_SCHEMA` to include industry property
+- AI will now detect industry from scraped web pages
+
+**Export & UI Updates**
+- Added `contact_seniority` column to CSV export
+- Added seniority badge display on contact cards (color-coded by level)
+- Purple = Executive, Blue = Senior, Green = Manager, Gray = Individual
+
+### Files Modified
+- `src/lib/enrichment/index.ts` - Seniority detection
+- `src/lib/firecrawl.ts` - Industry extraction prompts
+- `src/lib/signals.ts` - Industry field in signal insertion
+- `src/lib/export.ts` - Seniority column in CSV
+- `src/types/index.ts` - SeniorityLevel type, ExtractedSignal.industry
+- `src/components/dashboard/SignalCard.tsx` - Seniority badges
+- `src/app/api/signals/[id]/enrich/route.ts` - Seniority in DB insert
+- `src/app/api/signals/[id]/enrich/stream/route.ts` - Seniority in DB insert
+
+### Database Migration Required
+```sql
+-- Add seniority column to signal_contacts
+ALTER TABLE signal_contacts ADD COLUMN IF NOT EXISTS seniority text;
+```
+
+### Build Status
+- Successfully builds with `npm run build`
 

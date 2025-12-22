@@ -137,6 +137,8 @@ export interface UserSettings {
   updated_at: string;
 }
 
+export type SeniorityLevel = 'executive' | 'senior' | 'manager' | 'individual' | 'unknown';
+
 export interface SignalContact {
   id: string;
   signal_id: string;
@@ -144,6 +146,7 @@ export interface SignalContact {
   first_name: string | null;
   last_name: string | null;
   job_title: string | null;
+  seniority: SeniorityLevel | null;
   email: string | null;
   email_status: string | null;
   phone: string | null;
@@ -156,6 +159,7 @@ export interface SignalContact {
 export interface ExtractedSignal {
   company_name: string;
   company_domain: string;
+  industry?: string;
   signal_title: string;
   signal_detail: string;
   signal_url: string;

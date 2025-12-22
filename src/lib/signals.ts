@@ -66,6 +66,7 @@ export async function processSource(source: Source): Promise<{
       signal_type: source.signal_type,
       company_name: signal.company_name,
       company_domain: signal.company_domain,
+      industry: signal.industry || null,
       signal_title: signal.signal_title,
       signal_detail: signal.signal_detail,
       signal_url: signal.signal_url,
