@@ -5,8 +5,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Signal, SignalContact } from '@/types';
-import { ExternalLink, Clock, UserPlus, Mail, Phone, Linkedin, Loader2, Check, X, RefreshCw, AlertCircle } from 'lucide-react';
+import { ExternalLink, Clock, UserPlus, Mail, Phone, Linkedin, Loader2, Check, X, RefreshCw, AlertCircle, ShieldCheck, Upload } from 'lucide-react';
 import { toast } from 'sonner';
+import { calculateConfidenceScore, getConfidenceLabelColor } from '@/lib/signal-scoring';
 
 interface SignalCardProps {
   signal: Signal & { contacts?: SignalContact[] };
@@ -67,6 +68,11 @@ export function SignalCard({ signal }: SignalCardProps) {
   const [contacts, setContacts] = useState<SignalContact[]>(signal.contacts || []);
   const [enrichmentSteps, setEnrichmentSteps] = useState<EnrichmentStep[]>([]);
   const [enrichmentPhase, setEnrichmentPhase] = useState<string>('');
+  const [pushingToHubSpot, setPushingToHubSpot] = useState(false);
+
+  // Calculate confidence score
+  const confidenceScore = calculateConfidenceScore(signal);
+  const confidenceColor = getConfidenceLabelColor(confidenceScore.label);
 
   const handleEnrich = async () => {
     setEnriching(true);
@@ -177,6 +183,27 @@ export function SignalCard({ signal }: SignalCardProps) {
 
   const hasContacts = contacts.length > 0;
 
+  const handlePushToHubSpot = async () => {
+    setPushingToHubSpot(true);
+    try {
+      const response = await fetch('/api/integrations/hubspot/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signalId: signal.id }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        toast.success('Pushed to HubSpot successfully');
+      } else {
+        throw new Error(data.error || 'Failed to push to HubSpot');
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to push to HubSpot');
+    } finally {
+      setPushingToHubSpot(false);
+    }
+  };
+
   return (
     <Card className={`bg-white border-[#E3E8EE] shadow-sm hover:shadow-md transition-all duration-200 group ${signal.is_new ? 'ring-2 ring-[#635BFF]/20 ring-offset-2' : ''}`}>
       <CardContent className="p-4">
@@ -198,6 +225,13 @@ export function SignalCard({ signal }: SignalCardProps) {
               >
                 {signal.source_type === 'search' ? 'AI Search' : 'URL Monitor'}
               </Badge>
+              <span
+                className={`flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${confidenceColor}`}
+                title={`Confidence: ${confidenceScore.total}/100 (Source: ${confidenceScore.sourceScore}/40, Domain: ${confidenceScore.domainScore}/30, Data: ${confidenceScore.completenessScore}/30)`}
+              >
+                <ShieldCheck className="h-3 w-3" />
+                {confidenceScore.label}
+              </span>
               {signal.is_new && (
                 <span className="flex items-center gap-1 text-[10px] font-medium text-[#635BFF]">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#635BFF] animate-pulse" />
@@ -267,6 +301,20 @@ export function SignalCard({ signal }: SignalCardProps) {
                 )}
               </Button>
             )}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handlePushToHubSpot}
+              disabled={pushingToHubSpot}
+              className="h-8 px-2 text-xs text-[#FF7A59] hover:text-[#FF7A59] hover:bg-[#FF7A59]/10"
+              title="Push to HubSpot"
+            >
+              {pushingToHubSpot ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Upload className="h-3.5 w-3.5" />
+              )}
+            </Button>
           </div>
         </div>
 

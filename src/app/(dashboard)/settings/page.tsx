@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { Loader2, CheckCircle, XCircle, ExternalLink } from 'lucide-react';
 
 interface UserSettings {
   notify_email: boolean;
@@ -24,6 +25,11 @@ interface UserSettings {
   leadmagic_api_key: string;
   prospeo_api_key: string;
   enrichment_include_phone: boolean;
+}
+
+interface HubSpotStatus {
+  connected: boolean;
+  error?: string;
 }
 
 export default function SettingsPage() {
@@ -38,10 +44,61 @@ export default function SettingsPage() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [hubspotStatus, setHubspotStatus] = useState<HubSpotStatus | null>(null);
+  const [hubspotLoading, setHubspotLoading] = useState(false);
 
   useEffect(() => {
     fetchSettings();
+    fetchHubSpotStatus();
   }, []);
+
+  const fetchHubSpotStatus = async () => {
+    try {
+      const response = await fetch('/api/integrations/hubspot');
+      const data = await response.json();
+      setHubspotStatus(data);
+    } catch {
+      setHubspotStatus({ connected: false });
+    }
+  };
+
+  const handleHubSpotConnect = async () => {
+    setHubspotLoading(true);
+    try {
+      const response = await fetch('/api/integrations/hubspot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'get_auth_url' }),
+      });
+      const data = await response.json();
+      if (data.authUrl) {
+        window.location.href = data.authUrl;
+      } else {
+        toast.error(data.error || 'Failed to get authorization URL');
+      }
+    } catch {
+      toast.error('Failed to connect to HubSpot');
+    } finally {
+      setHubspotLoading(false);
+    }
+  };
+
+  const handleHubSpotDisconnect = async () => {
+    setHubspotLoading(true);
+    try {
+      const response = await fetch('/api/integrations/hubspot', { method: 'DELETE' });
+      if (response.ok) {
+        setHubspotStatus({ connected: false });
+        toast.success('HubSpot disconnected');
+      } else {
+        toast.error('Failed to disconnect HubSpot');
+      }
+    } catch {
+      toast.error('Failed to disconnect HubSpot');
+    } finally {
+      setHubspotLoading(false);
+    }
+  };
 
   const fetchSettings = async () => {
     try {
@@ -276,6 +333,72 @@ export default function SettingsPage() {
               }
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* HubSpot Integration */}
+      <Card className="max-w-2xl" style={{ backgroundColor: '#F6F9FC' }}>
+        <CardHeader>
+          <CardTitle className="text-[#0A2540] flex items-center gap-2">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="#FF7A59">
+              <path d="M18.164 7.93V5.084a2.198 2.198 0 001.267-1.981 2.202 2.202 0 00-2.201-2.201 2.202 2.202 0 00-2.201 2.201c0 .858.493 1.599 1.21 1.958v2.88a5.15 5.15 0 00-2.212 1.063L6.39 3.201A2.61 2.61 0 006.55 2.07a2.615 2.615 0 00-2.614-2.614A2.615 2.615 0 001.322 2.07a2.61 2.61 0 002.614 2.614c.48 0 .928-.13 1.314-.356l7.576 5.727a5.14 5.14 0 00-.764 2.693 5.15 5.15 0 00.731 2.636l-2.326 2.326a2.093 2.093 0 00-.614-.097 2.116 2.116 0 00-2.113 2.113 2.116 2.116 0 002.113 2.113 2.116 2.116 0 002.113-2.113c0-.22-.034-.432-.097-.632l2.297-2.297a5.161 5.161 0 003.064 1.012 5.168 5.168 0 005.159-5.159 5.155 5.155 0 00-4.225-5.07zm-.933 7.502a2.425 2.425 0 01-2.423-2.423 2.425 2.425 0 012.423-2.423 2.425 2.425 0 012.423 2.423 2.425 2.425 0 01-2.423 2.423z" />
+            </svg>
+            HubSpot Integration
+          </CardTitle>
+          <CardDescription>
+            Push signals and contacts directly to your HubSpot CRM.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {hubspotStatus === null ? (
+                <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+              ) : hubspotStatus.connected ? (
+                <>
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                  <span className="text-sm font-medium text-green-600">Connected</span>
+                </>
+              ) : (
+                <>
+                  <XCircle className="h-5 w-5 text-gray-400" />
+                  <span className="text-sm text-gray-600">Not connected</span>
+                </>
+              )}
+            </div>
+            {hubspotStatus?.connected ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleHubSpotDisconnect}
+                disabled={hubspotLoading}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                {hubspotLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : null}
+                Disconnect
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onClick={handleHubSpotConnect}
+                disabled={hubspotLoading}
+                style={{ backgroundColor: '#FF7A59' }}
+                className="hover:opacity-90"
+              >
+                {hubspotLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                )}
+                Connect HubSpot
+              </Button>
+            )}
+          </div>
+          <p className="text-xs text-gray-500">
+            When connected, you can push signals and their contacts to HubSpot as Companies and Contacts.
+          </p>
         </CardContent>
       </Card>
 
