@@ -237,10 +237,10 @@ export async function GET(request: NextRequest) {
     console.log('[ingest-jobs] Fetching Reed jobs...');
 
     const reedJobs = await searchReedMultipleLocations({
-      locations: icpLocations, // Full locations - 800s timeout in Vercel settings
+      locations: icpLocations.slice(0, 2), // TESTING: Limit to 2 locations to verify fixes
       postedWithin: 7,
       postedByDirectEmployer: true,
-      maxPerLocation: 200, // Higher limit for comprehensive ingestion
+      maxPerLocation: 25, // TESTING: Reduced to verify date/salary fixes
     });
 
     stats.reed_jobs_fetched = reedJobs.length;
