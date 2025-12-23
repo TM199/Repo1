@@ -237,10 +237,10 @@ export async function GET(request: NextRequest) {
     console.log('[ingest-jobs] Fetching Reed jobs...');
 
     const reedJobs = await searchReedMultipleLocations({
-      locations: icpLocations.slice(0, 2), // TESTING: Limit to 2 locations to verify fixes
+      locations: icpLocations.slice(0, 5), // Limit to 5 locations (works within timeout)
       postedWithin: 7,
       postedByDirectEmployer: true,
-      maxPerLocation: 25, // TESTING: Reduced to verify date/salary fixes
+      maxPerLocation: 100, // 100 jobs per location = ~500 jobs max
     });
 
     stats.reed_jobs_fetched = reedJobs.length;
