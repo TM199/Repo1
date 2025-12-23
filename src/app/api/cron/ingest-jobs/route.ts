@@ -7,6 +7,8 @@
  * Schedule: 0 6 * * * (6am daily)
  */
 
+export const maxDuration = 300; // 5 minutes (Vercel Pro)
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import {
