@@ -152,6 +152,35 @@ function detectIndustryFromTitle(title: string): string {
 }
 
 /**
+ * Parse Reed date format (can be "dd/mm/yyyy" or ISO format)
+ */
+function parseReedDate(dateStr: string): string | null {
+  if (!dateStr) return null;
+
+  try {
+    // Try ISO format first (2024-12-23T00:00:00)
+    const isoDate = new Date(dateStr);
+    if (!isNaN(isoDate.getTime())) {
+      return isoDate.toISOString().split('T')[0];
+    }
+
+    // Try UK format (dd/mm/yyyy)
+    const ukMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ukMatch) {
+      const [, day, month, year] = ukMatch;
+      const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toISOString().split('T')[0];
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Verify cron secret
  */
 function verifyCronSecret(request: NextRequest): boolean {
@@ -205,21 +234,10 @@ export async function GET(request: NextRequest) {
     console.log(`[ingest-jobs] Fetched ${reedJobs.length} Reed jobs`);
 
     // ==========================================
-    // STEP 2: Fetch jobs from Adzuna (Pro plan - enabled)
+    // STEP 2: Adzuna disabled (API not working reliably)
     // ==========================================
-    let adzunaJobs: AdzunaJob[] = [];
-
-    if (isAdzunaConfigured()) {
-      console.log('[ingest-jobs] Fetching Adzuna jobs...');
-      adzunaJobs = await searchAdzunaAllCategories({
-        max_days_old: 7,
-        maxPagesPerCategory: 2, // 2 pages per category
-      });
-      stats.adzuna_jobs_fetched = adzunaJobs.length;
-      console.log(`[ingest-jobs] Fetched ${adzunaJobs.length} Adzuna jobs`);
-    } else {
-      console.log('[ingest-jobs] Adzuna not configured, skipping');
-    }
+    const adzunaJobs: AdzunaJob[] = [];
+    console.log('[ingest-jobs] Adzuna disabled - using Reed only');
 
     // ==========================================
     // STEP 3: Process Reed jobs
@@ -478,7 +496,7 @@ async function processJob(
     industry: job.detectedIndustry,
     source: job.source,
     source_url: job.sourceUrl,
-    original_posted_date: new Date(job.postedDate).toISOString().split('T')[0],
+    original_posted_date: parseReedDate(job.postedDate),
     repost_count: repostCount,
     previous_posting_id: previousPostingId,
     salary_increase_from_previous: salaryIncrease,

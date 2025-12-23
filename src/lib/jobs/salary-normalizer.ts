@@ -23,17 +23,17 @@ export function normalizeToAnnual(
 ): number {
   switch (type) {
     case 'annual':
-      return amount;
+      return Math.round(amount);
     case 'monthly':
-      return amount * 12;
+      return Math.round(amount * 12);
     case 'daily':
       // Assume 220 working days per year (UK standard)
-      return amount * 220;
+      return Math.round(amount * 220);
     case 'hourly':
       // Assume 37.5 hours/week, 52 weeks
       return Math.round(amount * 37.5 * 52);
     default:
-      return amount;
+      return Math.round(amount);
   }
 }
 
