@@ -1,4 +1,18 @@
 {
+  "functions": {
+    "src/app/api/cron/ingest-jobs/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/cron/generate-pain-signals/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/cron/government/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/companies/enrich-all/route.ts": {
+      "maxDuration": 300
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/ingest-jobs",
