@@ -13,6 +13,7 @@ import {
   SIGNAL_TYPES_CONFIG,
 } from './signal-mapping';
 import { createAdminClient } from './supabase/server';
+import { searchJobBoards } from './job-boards';
 
 const firecrawl = new Firecrawl({
   apiKey: (process.env.FIRECRAWL_API_KEY || '').trim()
@@ -309,6 +310,40 @@ export async function executeSearch(
     signal_types: profile.signal_types,
     specific_roles: profile.specific_roles,
   }));
+
+  // Check if profile includes job-related signals
+  const jobSignalTypes: SignalType[] = ['new_job', 'company_hiring'];
+  const hasJobSignals = profile.signal_types.some(t => jobSignalTypes.includes(t as SignalType));
+
+  // If job signals requested, search job boards first (Reed + Indeed)
+  if (hasJobSignals) {
+    onProgress?.('Searching job boards (Reed, Indeed)...');
+    console.log('[Search] Job signals requested, searching job boards...');
+
+    try {
+      const locationTerms = getLocationSearchTerms(profile.locations);
+      const keywords = profile.specific_roles.length > 0
+        ? profile.specific_roles.slice(0, 3)
+        : [getIndustryLabel(profile.industry)];
+
+      const jobBoardSignals = await searchJobBoards({
+        keywords,
+        locations: locationTerms.slice(0, 2),
+        postedWithin: 7,
+        excludeRecruiters: true, // Always exclude recruiters
+        maxResults: 10,
+      });
+
+      console.log(`[Search] Job boards returned ${jobBoardSignals.length} signals`);
+      onProgress?.(`Found ${jobBoardSignals.length} job postings from job boards`);
+
+      allSignals.push(...jobBoardSignals);
+    } catch (jobError) {
+      console.error('[Search] Job board search failed:', jobError);
+      errors.push(`Job board search failed: ${jobError instanceof Error ? jobError.message : 'Unknown error'}`);
+    }
+  }
+
   console.log(`[Search] Generated ${queries.length} queries`);
   if (queries.length > 0) {
     console.log('[Search] First 3 queries:', queries.slice(0, 3).map(q => q.query));

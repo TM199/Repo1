@@ -172,3 +172,53 @@ export interface AgencyAnalysis {
   confidence: number;
   summary: string;
 }
+
+// ICP Profile Types
+export type ICPSignalType =
+  | 'job_pain'           // Stale jobs, reposts, salary increases, referral bonuses
+  | 'contracts_awarded'  // Public sector contract wins (Contracts Finder)
+  | 'tenders'            // High-value tender awards (Find a Tender)
+  | 'planning'           // Planning applications (Planning Data)
+  | 'leadership'         // New directors/officers (Companies House)
+  | 'funding';           // Funding rounds (Firecrawl)
+
+export type PullFrequency = 'hourly' | 'every_4h' | 'daily' | 'weekly';
+
+export type EmploymentType = 'permanent' | 'contract' | 'both';
+
+export interface ICPProfile {
+  id: string;
+  user_id: string;
+  name: string;
+
+  // Industry & Roles
+  industries: string[];
+  role_categories: string[];       // e.g., ["Site Operations", "Project Management"]
+  specific_roles: string[];
+  seniority_levels: string[];
+  employment_type: EmploymentType; // Filter by permanent/contract
+
+  // Locations
+  locations: string[];
+
+  // Signal Types to Track
+  signal_types: ICPSignalType[];
+
+  // Company Filters
+  company_size_min: number | null;
+  company_size_max: number | null;
+  exclude_keywords: string[];
+
+  // Contract/Tender Configuration
+  min_contract_value: number | null;
+  contract_sectors: string[];
+  contract_keywords: string[];
+
+  // Data Pull Configuration
+  pull_frequency: PullFrequency;
+  is_active: boolean;
+  last_synced_at: string | null;
+
+  created_at: string;
+  updated_at: string;
+}

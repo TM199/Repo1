@@ -67,6 +67,12 @@ const RECRUITMENT_PATTERNS = [
   /personnel/i,
   /resourcing/i,
   /employment\s*(agency|service)/i,
+  /\bagency\b/i,
+  /\bheadhunt/i,
+  /\bexecutive\s*search/i,
+  /\bplacement/i,
+  /\bcontractor/i,
+  /\binterim/i,
 
   // Known UK recruitment agencies
   /\bhays\b/i,
@@ -86,6 +92,26 @@ const RECRUITMENT_PATTERNS = [
   /blue\s*arrow/i,
   /pertemps/i,
   /search\s*consultancy/i,
+  /opus\s*talent/i,
+  /concept\s*personnel/i,
+  /joshua\s*robert/i,
+  /harnham/i,
+  /nigel\s*frank/i,
+  /frank\s*recruitment/i,
+  /sthree/i,
+  /peopleplus/i,
+  /nrl/i,
+  /orion/i,
+  /morson/i,
+  /matchtech/i,
+  /gattaca/i,
+  /rullion/i,
+  /gi\s*group/i,
+  /brook\s*street/i,
+  /corecruitment/i,
+  /select\s*appointments/i,
+  /vantage\s*consulting/i,
+  /talentspa/i,
 ];
 
 // Job description patterns that indicate recruiter posting
@@ -96,6 +122,15 @@ const RECRUITER_DESCRIPTION_PATTERNS = [
   /client\s*of\s*ours/i,
   /we\s*are\s*recruiting/i,
   /acting\s*on\s*behalf/i,
+  /working\s*with\s*(a|our)\s*client/i,
+  /partnered\s*with/i,
+  /retained\s*to\s*find/i,
+  /exclusive\s*partnership/i,
+  /we\s*have\s*been\s*engaged/i,
+  /leading\s*client/i,
+  /blue[\s-]?chip\s*client/i,
+  /undisclosed\s*client/i,
+  /major\s*client/i,
 ];
 
 /**
@@ -543,4 +578,42 @@ export async function searchReedMultipleLocations(params: {
 
   console.log(`[job-boards] searchReedMultipleLocations: ${allJobs.length} unique jobs across ${params.locations.length} locations`);
   return allJobs;
+}
+
+/**
+ * Filter jobs by employment type (permanent/contract)
+ * Accepts any object with jobTitle and jobDescription properties
+ */
+export function filterByEmploymentType<T extends { jobTitle: string; jobDescription?: string }>(
+  jobs: T[],
+  type: 'permanent' | 'contract' | 'both'
+): T[] {
+  if (type === 'both') return jobs;
+
+  if (type === 'permanent') {
+    return jobs.filter(job => {
+      const titleLower = job.jobTitle.toLowerCase();
+      const descLower = job.jobDescription?.toLowerCase() || '';
+      // Exclude if title/description indicates contract
+      return !titleLower.includes('contract') &&
+             !titleLower.includes('freelance') &&
+             !descLower.includes('contract position') &&
+             !descLower.includes('fixed term contract');
+    });
+  }
+
+  if (type === 'contract') {
+    return jobs.filter(job => {
+      const titleLower = job.jobTitle.toLowerCase();
+      const descLower = job.jobDescription?.toLowerCase() || '';
+      // Include if title/description indicates contract
+      return titleLower.includes('contract') ||
+             titleLower.includes('freelance') ||
+             descLower.includes('contract position') ||
+             descLower.includes('fixed term contract') ||
+             descLower.includes('contract role');
+    });
+  }
+
+  return jobs;
 }

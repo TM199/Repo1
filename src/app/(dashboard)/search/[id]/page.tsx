@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Play, Edit, Trash2, Clock, Calendar, Target, MapPin, Briefcase, Building2, Filter } from 'lucide-react';
 import { DeleteProfileButton } from './DeleteProfileButton';
+import { AnalyzeButton } from './AnalyzeButton';
 
 interface SearchProfile {
   id: string;
@@ -34,8 +35,9 @@ interface SearchRun {
 export default async function SearchProfileDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
+  const { id } = await params;
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
@@ -44,7 +46,7 @@ export default async function SearchProfileDetailPage({
   const { data: profile, error } = await supabase
     .from('search_profiles')
     .select('*')
-    .eq('id', params.id)
+    .eq('id', id)
     .eq('user_id', user?.id)
     .single();
 
@@ -56,7 +58,7 @@ export default async function SearchProfileDetailPage({
   const { data: searchRuns } = await supabase
     .from('search_runs')
     .select('*')
-    .eq('search_profile_id', params.id)
+    .eq('search_profile_id', id)
     .eq('user_id', user?.id)
     .order('run_at', { ascending: false })
     .limit(5);
@@ -79,13 +81,14 @@ export default async function SearchProfileDetailPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href={`/search/${params.id}/run`}>
+          <AnalyzeButton profileId={id} industry={profileData.industry} />
+          <Link href={`/search/${id}/run`}>
             <Button className="bg-[#635BFF] hover:bg-[#5851DF] text-white">
               <Play className="h-4 w-4 mr-2" />
               Run Search
             </Button>
           </Link>
-          <DeleteProfileButton profileId={params.id} />
+          <DeleteProfileButton profileId={id} />
         </div>
       </div>
 

@@ -34,29 +34,68 @@ import {
   detectReferralBonus,
 } from '@/lib/jobs/salary-normalizer';
 
-// UK regions for comprehensive Reed coverage
-const UK_REGIONS = [
+// Default UK regions (used if no ICP profiles exist)
+const DEFAULT_UK_REGIONS = [
   'London',
   'Manchester',
   'Birmingham',
   'Leeds',
-  'Glasgow',
-  'Liverpool',
   'Bristol',
-  'Sheffield',
-  'Edinburgh',
-  'Cardiff',
-  'Newcastle',
-  'Nottingham',
-  'Southampton',
-  'Belfast',
-  'Leicester',
-  'Cambridge',
-  'Oxford',
-  'Reading',
-  'Milton Keynes',
-  'Aberdeen',
 ];
+
+/**
+ * Get unique locations from all active ICP profiles
+ */
+async function getICPLocations(supabase: ReturnType<typeof createAdminClient>): Promise<string[]> {
+  const { data: profiles } = await supabase
+    .from('icp_profiles')
+    .select('locations')
+    .eq('is_active', true);
+
+  if (!profiles || profiles.length === 0) {
+    console.log('[ingest-jobs] No active ICP profiles, using default locations');
+    return DEFAULT_UK_REGIONS;
+  }
+
+  // Collect unique locations from all profiles
+  const allLocations = new Set<string>();
+  for (const profile of profiles) {
+    for (const location of profile.locations || []) {
+      allLocations.add(location);
+    }
+  }
+
+  const locations = Array.from(allLocations);
+  console.log(`[ingest-jobs] Found ${locations.length} unique locations from ${profiles.length} ICP profiles`);
+  return locations.length > 0 ? locations : DEFAULT_UK_REGIONS;
+}
+
+/**
+ * Get industries that should be tracked based on active ICPs
+ */
+async function getICPIndustries(supabase: ReturnType<typeof createAdminClient>): Promise<Set<string>> {
+  const { data: profiles } = await supabase
+    .from('icp_profiles')
+    .select('industries, signal_types')
+    .eq('is_active', true);
+
+  if (!profiles || profiles.length === 0) {
+    return new Set(); // Empty = allow all industries
+  }
+
+  // Only include industries from profiles that have 'job_pain' enabled
+  const industries = new Set<string>();
+  for (const profile of profiles) {
+    const signalTypes = profile.signal_types || [];
+    if (signalTypes.includes('job_pain')) {
+      for (const industry of profile.industries || []) {
+        industries.add(industry);
+      }
+    }
+  }
+
+  return industries;
+}
 
 // Industry detection from job titles
 const INDUSTRY_PATTERNS: Record<string, RegExp[]> = {
@@ -142,33 +181,40 @@ export async function GET(request: NextRequest) {
     console.log('[ingest-jobs] Starting job ingestion...');
 
     // ==========================================
+    // STEP 0: Get ICP-driven configuration
+    // ==========================================
+    const icpLocations = await getICPLocations(supabase);
+    const icpIndustries = await getICPIndustries(supabase);
+
+    console.log(`[ingest-jobs] ICP Config - Locations: ${icpLocations.join(', ')}`);
+    console.log(`[ingest-jobs] ICP Config - Industries: ${icpIndustries.size > 0 ? Array.from(icpIndustries).join(', ') : 'All'}`);
+
+    // ==========================================
     // STEP 1: Fetch jobs from Reed
     // ==========================================
     console.log('[ingest-jobs] Fetching Reed jobs...');
 
     const reedJobs = await searchReedMultipleLocations({
-      locations: UK_REGIONS.slice(0, 10), // Top 10 cities first
+      locations: icpLocations, // No limit - Pro plan has 300s timeout
       postedWithin: 7,
       postedByDirectEmployer: true,
-      maxPerLocation: 200,
+      maxPerLocation: 200, // Increased for Pro plan
     });
 
     stats.reed_jobs_fetched = reedJobs.length;
     console.log(`[ingest-jobs] Fetched ${reedJobs.length} Reed jobs`);
 
     // ==========================================
-    // STEP 2: Fetch jobs from Adzuna (if configured)
+    // STEP 2: Fetch jobs from Adzuna (Pro plan - enabled)
     // ==========================================
     let adzunaJobs: AdzunaJob[] = [];
 
     if (isAdzunaConfigured()) {
       console.log('[ingest-jobs] Fetching Adzuna jobs...');
-
       adzunaJobs = await searchAdzunaAllCategories({
         max_days_old: 7,
-        maxPagesPerCategory: 3,
+        maxPagesPerCategory: 2, // 2 pages per category
       });
-
       stats.adzuna_jobs_fetched = adzunaJobs.length;
       console.log(`[ingest-jobs] Fetched ${adzunaJobs.length} Adzuna jobs`);
     } else {
@@ -187,6 +233,14 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
+        // Detect industry from job title
+        const detectedIndustry = detectIndustryFromTitle(reedJob.jobTitle);
+
+        // Filter by ICP industries if any are configured
+        if (icpIndustries.size > 0 && !icpIndustries.has(detectedIndustry) && detectedIndustry !== 'Other') {
+          continue; // Skip jobs not matching ICP industries
+        }
+
         await processJob(supabase, {
           source: 'reed',
           sourceId: String(reedJob.jobId),
@@ -197,7 +251,7 @@ export async function GET(request: NextRequest) {
           sourceUrl: reedJob.jobUrl,
           description: reedJob.jobDescription,
           salary: parseReedSalary(reedJob),
-          detectedIndustry: detectIndustryFromTitle(reedJob.jobTitle),
+          detectedIndustry, // Already detected above
         }, stats);
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Unknown error';

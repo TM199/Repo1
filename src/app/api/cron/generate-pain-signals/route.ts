@@ -9,22 +9,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
-
-// Pain signal scoring weights
-const PAIN_SCORES = {
-  stale_job_30: 5,
-  stale_job_60: 15,
-  stale_job_90: 25,
-  job_reposted_once: 10,
-  job_reposted_twice: 20,
-  job_reposted_three_plus: 30,
-  salary_increase_10_percent: 15,
-  salary_increase_20_percent: 25,
-  contract_no_hiring_30_days: 20,
-  contract_no_hiring_60_days: 35,
-  high_referral_bonus: 15,
-  multiple_open_roles: 10,
-};
+import {
+  PAIN_SCORES,
+  determineJobSignalType,
+  generateSignalTitle,
+  generateSignalDetail,
+} from '@/lib/signals/detection';
 
 /**
  * Verify cron secret
@@ -43,6 +33,7 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminClient();
   const stats = {
     stale_signals: 0,
+    hard_to_fill_signals: 0,
     repost_signals: 0,
     salary_increase_signals: 0,
     contract_signals: 0,
@@ -74,53 +65,72 @@ export async function GET(request: NextRequest) {
     } else if (staleJobs) {
       for (const job of staleJobs) {
         try {
-          // Calculate days_open dynamically
+          // Calculate days_open and days_since_refresh
           const daysOpen = Math.floor(
             (Date.now() - new Date(job.original_posted_date).getTime()) / (1000 * 60 * 60 * 24)
           );
+          const daysSinceRefresh = Math.floor(
+            (Date.now() - new Date(job.last_seen_at).getTime()) / (1000 * 60 * 60 * 24)
+          );
 
-          // Determine signal type based on staleness
-          let signalType: string;
-          let painScore: number;
-          let urgency: string;
+          // Determine signal type based on both metrics
+          const signalConfig = determineJobSignalType(daysOpen, daysSinceRefresh);
+          if (!signalConfig) continue;
 
-          if (daysOpen >= 90) {
-            signalType = 'stale_job_90';
-            painScore = PAIN_SCORES.stale_job_90;
-            urgency = 'immediate';
-          } else if (daysOpen >= 60) {
-            signalType = 'stale_job_60';
-            painScore = PAIN_SCORES.stale_job_60;
-            urgency = 'immediate';
-          } else {
-            signalType = 'stale_job_30';
-            painScore = PAIN_SCORES.stale_job_30;
-            urgency = 'short_term';
-          }
+          const { signalType, painScore, urgency, isHardToFill } = signalConfig;
 
-          // Check if signal already exists
-          const { data: existingSignal } = await supabase
+          // Check if signal already exists (check for both stale and hard_to_fill variants)
+          const { data: existingSignals } = await supabase
             .from('company_pain_signals')
-            .select('id')
+            .select('id, pain_signal_type')
             .eq('company_id', job.company_id)
             .eq('source_job_posting_id', job.id)
-            .eq('pain_signal_type', signalType)
-            .eq('is_active', true)
-            .single();
+            .or('pain_signal_type.like.stale_job%,pain_signal_type.like.hard_to_fill%')
+            .eq('is_active', true);
 
-          if (!existingSignal) {
+          // Check if we need to create or update the signal
+          let shouldCreateSignal = false;
+          if (!existingSignals || existingSignals.length === 0) {
+            shouldCreateSignal = true;
+          } else {
+            // Signal exists - check if type has changed
+            const existingSignal = existingSignals[0];
+            if (existingSignal.pain_signal_type !== signalType) {
+              // Signal type has changed (e.g., stale -> hard_to_fill), deactivate old and create new
+              await supabase
+                .from('company_pain_signals')
+                .update({ is_active: false, resolved_at: new Date().toISOString() })
+                .eq('id', existingSignal.id);
+              shouldCreateSignal = true;
+            }
+          }
+
+          if (shouldCreateSignal) {
             await supabase.from('company_pain_signals').insert({
               company_id: job.company_id,
               pain_signal_type: signalType,
               source_job_posting_id: job.id,
-              signal_title: `${job.title} - Open ${daysOpen} days`,
-              signal_detail: `Role at ${job.companies?.name} has been open for ${daysOpen} days without being filled. Location: ${job.location}`,
+              signal_title: generateSignalTitle(job.title, daysOpen, isHardToFill),
+              signal_detail: generateSignalDetail(
+                job.title,
+                job.companies?.name || '',
+                job.location,
+                daysOpen,
+                daysSinceRefresh,
+                isHardToFill
+              ),
               signal_value: daysOpen,
+              days_since_refresh: daysSinceRefresh,
               pain_score_contribution: painScore,
               urgency,
             });
 
-            stats.stale_signals++;
+            // Update stats
+            if (isHardToFill) {
+              stats.hard_to_fill_signals++;
+            } else {
+              stats.stale_signals++;
+            }
           }
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : 'Unknown error';
@@ -150,13 +160,13 @@ export async function GET(request: NextRequest) {
 
           if (job.repost_count >= 3) {
             signalType = 'job_reposted_three_plus';
-            painScore = PAIN_SCORES.job_reposted_three_plus;
+            painScore = PAIN_SCORES.job_reposted_three_plus.pain_score;
           } else if (job.repost_count >= 2) {
             signalType = 'job_reposted_twice';
-            painScore = PAIN_SCORES.job_reposted_twice;
+            painScore = PAIN_SCORES.job_reposted_twice.pain_score;
           } else {
             signalType = 'job_reposted_once';
-            painScore = PAIN_SCORES.job_reposted_once;
+            painScore = PAIN_SCORES.job_reposted_once.pain_score;
           }
 
           // Check for existing repost signal
@@ -213,8 +223,8 @@ export async function GET(request: NextRequest) {
 
           const painScore =
             job.salary_increase_from_previous >= 20
-              ? PAIN_SCORES.salary_increase_20_percent
-              : PAIN_SCORES.salary_increase_10_percent;
+              ? PAIN_SCORES.salary_increase_20_percent.pain_score
+              : PAIN_SCORES.salary_increase_10_percent.pain_score;
 
           // Check for existing salary signal
           const { data: existingSignal } = await supabase
@@ -285,7 +295,7 @@ export async function GET(request: NextRequest) {
               signal_title: `${job.title} - Referral bonus ${bonusText}`,
               signal_detail: `Company is offering a referral bonus for this role, indicating difficulty finding candidates through normal channels.`,
               signal_value: job.referral_bonus_amount || 0,
-              pain_score_contribution: PAIN_SCORES.high_referral_bonus,
+              pain_score_contribution: PAIN_SCORES.high_referral_bonus.pain_score,
               urgency: 'short_term',
             });
 
@@ -354,8 +364,8 @@ export async function GET(request: NextRequest) {
 
             const painScore =
               daysSinceAward >= 60
-                ? PAIN_SCORES.contract_no_hiring_60_days
-                : PAIN_SCORES.contract_no_hiring_30_days;
+                ? PAIN_SCORES.contract_no_hiring_60_days.pain_score
+                : PAIN_SCORES.contract_no_hiring_30_days.pain_score;
 
             // Check for existing contract signal
             const { data: existingSignal } = await supabase

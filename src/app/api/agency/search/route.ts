@@ -1,8 +1,17 @@
 import { NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import Firecrawl from '@mendable/firecrawl-js';
 import { SignalType, ExtractedSignal } from '@/types';
 import { getSignalTypeConfig, getLocationSearchTerms } from '@/lib/signal-mapping';
+import { searchJobBoards } from '@/lib/job-boards';
+
+/**
+ * Generate fingerprint hash for deduplication (same as search.ts)
+ */
+function generateFingerprint(signal: { company_name: string; signal_title: string; signal_url: string }): string {
+  const str = `${signal.company_name}|${signal.signal_title}|${signal.signal_url}`.toLowerCase();
+  return Buffer.from(str).toString('base64').slice(0, 64);
+}
 
 const firecrawl = new Firecrawl({
   apiKey: (process.env.FIRECRAWL_API_KEY || '').trim()
@@ -49,8 +58,68 @@ export async function POST(request: NextRequest) {
       };
 
       try {
+        // Load existing signal hashes from database for deduplication
+        const adminSupabase = createAdminClient();
+        const { data: existingSignals } = await adminSupabase
+          .from('signals')
+          .select('hash');
+        const existingHashes = new Set(
+          existingSignals?.map(s => s.hash).filter(Boolean) || []
+        );
+
         const signals: ExtractedSignal[] = [];
-        const queries = generateAgencyQueries(industries, signalTypes, locations);
+
+        // Check if job-related signals are requested
+        const jobSignalTypes: SignalType[] = ['new_job', 'company_hiring'];
+        const hasJobSignals = signalTypes.some(t => jobSignalTypes.includes(t));
+
+        // If job signals requested, search job boards first (Reed + Indeed)
+        if (hasJobSignals) {
+          send('status', { message: 'Searching job boards (Reed, Indeed)...' });
+
+          try {
+            const locationTerms = getLocationSearchTerms(locations);
+            const keywords = industries.slice(0, 3);
+
+            const jobBoardSignals = await searchJobBoards({
+              keywords,
+              locations: locationTerms.slice(0, 2),
+              postedWithin: 7,
+              excludeRecruiters: true, // Always exclude recruiters
+              maxResults: 8,
+            });
+
+            for (const signal of jobBoardSignals) {
+              if (signals.length >= MAX_SIGNALS) break;
+
+              const hash = generateFingerprint({
+                company_name: signal.company_name,
+                signal_title: signal.signal_title,
+                signal_url: signal.signal_url,
+              });
+
+              const existsInDb = existingHashes.has(hash);
+
+              signals.push(signal);
+
+              send('signal', {
+                ...signal,
+                signal_type: 'new_job' as SignalType,
+                industry: industries[0] || 'general',
+                hash,
+                exists_in_db: existsInDb,
+              });
+            }
+
+            send('status', { message: `Found ${jobBoardSignals.length} job postings from job boards` });
+          } catch (error) {
+            console.error('[agency-search] Job board search failed:', error);
+          }
+        }
+
+        // Continue with regular Firecrawl search for non-job signals (or if we need more)
+        const nonJobSignalTypes = signalTypes.filter(t => !jobSignalTypes.includes(t));
+        const queries = generateAgencyQueries(industries, nonJobSignalTypes.length > 0 ? nonJobSignalTypes : signalTypes, locations);
 
         send('status', { message: `Generated ${queries.length} search queries`, total: queries.length });
 
@@ -88,18 +157,31 @@ export async function POST(request: NextRequest) {
                 for (const signal of extracted) {
                   if (signals.length >= MAX_SIGNALS) break;
 
-                  // Check for duplicates
-                  const isDupe = signals.some(s =>
+                  // Generate hash for this signal
+                  const hash = generateFingerprint({
+                    company_name: signal.company_name,
+                    signal_title: signal.signal_title,
+                    signal_url: signal.signal_url,
+                  });
+
+                  // Check for duplicates within current session
+                  const isDupeInSession = signals.some(s =>
                     s.company_name.toLowerCase() === signal.company_name.toLowerCase() &&
                     s.signal_title.toLowerCase() === signal.signal_title.toLowerCase()
                   );
 
-                  if (!isDupe) {
+                  if (!isDupeInSession) {
                     signals.push(signal);
+
+                    // Check if already exists in database
+                    const existsInDb = existingHashes.has(hash);
+
                     send('signal', {
                       ...signal,
                       signal_type: signalType,
                       industry,
+                      hash,
+                      exists_in_db: existsInDb,
                     });
                   }
                 }

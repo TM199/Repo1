@@ -7,19 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { AgencyAnalysis, SignalType, ExtractedSignal } from '@/types';
+import { AgencyAnalysis, SignalType } from '@/types';
 import { AGENCY_INDUSTRIES, getSignalTypesForIndustries, getHighUrgencySignals, SIGNAL_HIRING_URGENCY, getSignalHiringContext } from '@/lib/agency-signal-mapping';
 import { LOCATIONS, getSignalTypeConfig } from '@/lib/signal-mapping';
-import { Building2, Search, Loader2, CheckCircle, AlertCircle, ArrowRight, ArrowLeft, Globe, Download } from 'lucide-react';
+import { Building2, Search, Loader2, CheckCircle, AlertCircle, ArrowRight, ArrowLeft, Globe } from 'lucide-react';
 import { toast } from 'sonner';
-import { AgencyResultsPanel } from '@/components/dashboard/AgencyResultsPanel';
+import { AgencyResultsPanel, AgencySignal } from '@/components/dashboard/AgencyResultsPanel';
 
 type Step = 'input' | 'review' | 'searching' | 'results';
-
-interface AgencySignal extends ExtractedSignal {
-  signal_type: SignalType;
-  industry: string;
-}
 
 export function AgencyFinderClient() {
   const [step, setStep] = useState<Step>('input');
@@ -456,7 +451,7 @@ export function AgencyFinderClient() {
             </div>
           </div>
 
-          <AgencyResultsPanel signals={signals} />
+          <AgencyResultsPanel signals={signals} onSignalsUpdated={setSignals} />
         </div>
       )}
     </div>

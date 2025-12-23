@@ -4,17 +4,16 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
-import { LayoutDashboard, Radio, Zap, Download, Settings, Plus, Search, Building2, Flame } from 'lucide-react';
+import { LayoutDashboard, Zap, Download, Settings, Plus, Building2, Flame, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/sources', label: 'Sources', icon: Radio },
-  { href: '/search', label: 'AI Search', icon: Search },
-  { href: '/agency', label: 'Agency Finder', icon: Building2 },
+  { href: '/icp', label: 'ICP Profiles', icon: Users },
   { href: '/pain', label: 'Companies in Pain', icon: Flame },
   { href: '/signals', label: 'Signals', icon: Zap, showBadge: true },
+  { href: '/agency', label: 'Agency Finder', icon: Building2 },
   { href: '/export', label: 'Export', icon: Download },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
@@ -61,10 +60,10 @@ export function Sidebar() {
   return (
     <aside className="w-60 border-r border-[#E3E8EE] bg-white min-h-[calc(100vh-3.5rem)] flex flex-col">
       <div className="p-4">
-        <Link href="/sources/add">
+        <Link href="/icp/new">
           <Button className="w-full bg-[#635BFF] hover:bg-[#5851ea] text-white h-9 text-sm font-medium shadow-sm">
             <Plus className="h-4 w-4 mr-2" />
-            Add Source
+            New ICP Profile
           </Button>
         </Link>
       </div>

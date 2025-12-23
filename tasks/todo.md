@@ -9,420 +9,160 @@ Based on comprehensive business analysis. Focus: Make the product viable for sal
 
 ---
 
-## Phase 1: Critical Fixes (P0) - COMPLETED
+## Signal Detection Engine v2 - Hard to Fill vs Stale Distinction - COMPLETED
 
-### 1.1 Add Search & Filter to Signals Page
-**Files**: `SignalsPageClient.tsx`, `/api/signals/route.ts`, `queries.ts`
+### Goal
+Fix pain signal generation to distinguish between:
+- **Hard to Fill** (HIGH VALUE): Jobs open 90+ days AND still being actively refreshed
+- **Stale/Abandoned** (LOWER VALUE): Jobs open 90+ days but NOT seen recently
 
-- [x] Add search input for company name filtering
-- [x] Add signal type dropdown filter
-- [x] Add "has contacts" checkbox filter
-- [x] Add date range filter
-- [x] Update API route to accept filter parameters
-- [x] Update queries.ts with filter logic
-- [x] Add clear filters button
-- [x] Add pagination (50 per page with Previous/Next)
+### Key Insight
+We already track `last_seen_at` in job_postings - we just need to USE it in signal generation.
 
-### 1.2 Fix Company Domain Extraction
-**Files**: `contracts-finder.ts`, `find-a-tender.ts`, `planning-data.ts`, `companies-house.ts`
+### Implementation Steps
 
-- [x] Create domain lookup utility (`domain-resolver.ts`)
-- [x] Update contracts-finder.ts - extract from OCDS party contact info
-- [x] Update find-a-tender.ts - extract from OCDS party contact info
-- [x] Update planning-data.ts - return empty instead of guessing
-- [x] Update companies-house.ts - return empty instead of guessing
-- [x] Fallback: return empty string instead of guessing domains
+#### Phase 1: Core Signal Logic Fix (Critical)
 
-### 1.3 Fix Leadership Change Detection
-**Files**: `companies-house.ts`
+- [x] **1. Create signal detection library**
+  - File: `src/lib/signals/detection.ts`
+  - Add PAIN_SCORES config with hard_to_fill and stale variants
+  - Add REFRESH_THRESHOLD_DAYS constant (14 days)
+  - Signal types: hard_to_fill_30/60/90, stale_job_30/60/90
 
-- [x] Changed from "recently incorporated" to actual officer appointment dates
-- [x] Filter by appointed_on date to find recent appointments
-- [x] Alternative fallback method for when advanced search unavailable
-- [x] Filter to only executive appointments (not secretaries)
-- [x] Added proper date filtering for recent appointments
+- [x] **2. Fix generate-pain-signals cron**
+  - File: `src/app/api/cron/generate-pain-signals/route.ts`
+  - Import detection functions from @/lib/signals/detection
+  - Calculate `daysSinceRefresh` from `last_seen_at`
+  - Use determineJobSignalType() to get signal config
+  - Use generateSignalTitle() and generateSignalDetail() for signal text
+  - Track hard_to_fill_signals in stats
+  - Check for both stale and hard_to_fill variants when looking for existing signals
+  - Handle signal type transitions (stale->hard_to_fill)
 
----
+- [x] **3. Update ICP scan route**
+  - File: `src/app/api/icp/[id]/scan/route.ts`
+  - Apply same hard_to_fill vs stale logic
+  - Include `days_since_refresh` in signal detail
 
-## Phase 2: CRM Integration (P1) - COMPLETED
+- [x] **4. Add days_since_refresh column to pain signals**
+  - File: `scripts/migrate-signal-refresh-tracking.sql`
+  - Add column to track when signal was last refreshed
 
-### 2.1 HubSpot Integration
-**New Files**: `src/lib/integrations/hubspot.ts`, `/api/integrations/hubspot/`
+#### Phase 2: UI Updates
 
-- [x] Create HubSpot API client
-- [x] Add OAuth connection flow (authorize, callback, token refresh)
-- [x] Create API routes for connection management
-- [x] Implement push signals as Companies (upsert by domain)
-- [x] Implement push contacts as Contacts (upsert by email)
-- [x] Auto-associate contacts to companies
-- [x] Add "Push to HubSpot" button on signal cards
-- [x] Create settings page for HubSpot connection
+- [x] **5. Update CompaniesInPainDashboard**
+  - File: `src/components/dashboard/CompaniesInPainDashboard.tsx`
+  - Show "ACTIVE" badge for hard_to_fill signals
+  - Show "POSSIBLY STALE" badge for stale signals
+  - Display refresh context on cards
+  - Updated stats card to show "Actively Recruiting" count
 
-### 2.2 Export Improvements
-**Files**: `export.ts`, `/api/signals/export/route.ts`
+- [x] **6. Update signal explanations**
+  - File: `src/lib/signal-explanations.ts`
+  - Add explanations for new signal types (hard_to_fill_30/60/90)
+  - Update stale_job explanations to clarify they're potentially abandoned
 
-- [x] Add email_status column to CSV export
-- [x] Add JSON export option (`?format=json`)
-- [x] Add date range filter for export (`?date_from=&date_to=`)
-- [x] Add "export only with contacts" option (`?has_contacts=true`)
+#### Phase 3: Optimise Enrichment
 
----
+- [x] **7. Create enrichment priority logic**
+  - File: `src/lib/signals/enrichment.ts` (new)
+  - Prioritise hard_to_fill signals for Firecrawl enrichment
+  - Skip stale signals to save API costs
+  - Sort companies by presence of hard_to_fill signals first
 
-## Phase 3: Data Quality (P2) - COMPLETED
+- [x] **8. Enrichment cron ready**
+  - No existing enrichment cron to update
+  - New library ready to use when enrichment cron is created
 
-### 3.1 Add Industry Detection
-**Files**: Gov API files, `search.ts`, `firecrawl.ts`
+#### Phase 4: Testing & Verification
 
-- [x] Map SIC codes from Companies House to industry names
-- [x] Add industry classification for Firecrawl signals (LLM extraction)
-- [x] Store industry on all signals (scrape, search, government)
-- [x] Add industry filter to signals page
+- [x] **9. Build passes**
+  - All TypeScript compiles correctly
+  - No errors
 
-### 3.2 Add Signal Confidence Scoring
-**New File**: `src/lib/signal-scoring.ts`
-
-- [x] Create scoring algorithm based on source reliability
-- [x] Factor in domain verification status
-- [x] Factor in company match confidence (data completeness)
-- [x] Display confidence score on signal cards
-
-### 3.3 Improve Enrichment Data Quality
-**Files**: `enrichment/index.ts`
-
-- [x] Add seniority detection from job titles
-- [x] Store seniority level (executive/senior/manager/individual)
-- [x] Display seniority badge on contacts in UI
-- [x] Include seniority in CSV export
-
----
-
-## Phase 4: Advanced Features (P3)
-
-### 4.1 Activity Tracking
-- [ ] Create activities database table
-- [ ] Track when contact was exported/copied
-- [ ] Track outreach attempts
-- [ ] Show activity history on signal card
-- [ ] Prevent duplicate outreach warnings
-
-### 4.2 Slack Integration
-- [ ] Create Slack API client
-- [ ] Add Slack OAuth connection
-- [ ] Post new signals to channel
-- [ ] Filter by signal type for notifications
-
-### 4.3 Email Notifications
-- [ ] Daily/weekly signal digest emails
-- [ ] Alert on specific signal types
-- [ ] Summary of enriched contacts
-
----
-
-## Phase 5: Agency Finder Feature - COMPLETED
-
-New feature to analyze recruitment agency websites and generate targeted signals.
-
-### 5.1 Core Infrastructure
-- [x] Create `src/lib/agency-signal-mapping.ts` - Hiring urgency-based signal prioritization
-- [x] Create `src/lib/agency-analyzer.ts` - Firecrawl website analysis with industry detection
-- [x] Add `AgencyAnalysis` interface to `src/types/index.ts`
-
-### 5.2 API Endpoints
-- [x] Create `/api/agency/analyze/route.ts` - Analyze agency website
-- [x] Create `/api/agency/search/route.ts` - SSE streaming signal search (max 10 signals)
-
-### 5.3 UI Components
-- [x] Create `src/app/(dashboard)/agency/page.tsx` - Main page
-- [x] Create `src/app/(dashboard)/agency/AgencyFinderClient.tsx` - 4-step wizard UI
-- [x] Create `src/components/dashboard/AgencyResultsPanel.tsx` - Results with CSV export
-- [x] Update `src/components/dashboard/Sidebar.tsx` - Added "Agency Finder" nav item
-
-### 5.4 Integration
-- [x] CSV export for agency signals (built into AgencyResultsPanel)
-- [x] Build verified successfully
+- [ ] **10. Database migration required**
+  - Run `scripts/migrate-signal-refresh-tracking.sql` in Supabase SQL Editor
+  - Adds `days_since_refresh` column to `company_pain_signals`
 
 ---
 
 ## Previously Completed (Reference)
 
-### Signal Detection Infrastructure
-- [x] Government APIs (Contracts Finder, Find a Tender, Companies House, Planning Data)
-- [x] Firecrawl AI search with real-time streaming
-- [x] 14 signal types defined and detectable
-- [x] Hash-based deduplication
-- [x] Daily cron jobs for automatic sync
+### Phase 1: Critical Fixes (P0) - COMPLETED
+- [x] Search & Filter on Signals Page
+- [x] Domain extraction fix
+- [x] Leadership detection fix
 
-### Lead Enrichment
-- [x] LeadMagic integration (role-based contact discovery)
-- [x] Prospeo integration (email + phone lookup)
-- [x] Real-time progress UI with streaming SSE
-- [x] Email validation status display
-- [x] Contact storage in signal_contacts table
+### Phase 2: CRM Integration (P1) - COMPLETED
+- [x] HubSpot Integration
+- [x] Export Improvements
 
-### User Interface
-- [x] Signal cards with company, type, title, detail
-- [x] 5-step search wizard
-- [x] Copy-to-clipboard for email/phone
-- [x] CSV export (full and selective)
-- [x] Cards vs Table view toggle
-- [x] Bulk enrichment
+### Phase 3: Data Quality (P2) - COMPLETED
+- [x] Industry Detection
+- [x] Signal Confidence Scoring
+- [x] Enrichment Data Quality
 
----
+### Phase 5: Agency Finder - COMPLETED
+- [x] Agency website analysis
+- [x] Signal search with SSE streaming
+- [x] Results with CSV export
 
-## Review - Phase 1 Completion
-
-### Summary of Changes Made
-
-**1.1 Search & Filter (SignalsPageClient.tsx)**
-- Added company name search with instant search on Enter key
-- Added signal type dropdown filter with all 14 signal types
-- Added "has contacts" filter (All/Has Contacts/Needs Enrichment)
-- Added date range filters (from/to date pickers)
-- Added collapsible filter panel (toggle with button)
-- Added active filter count badge
-- Added clear all filters button
-- Added pagination with 50 signals per page
-- Changed from server-side to client-side data fetching for dynamic filtering
-
-**1.2 API Updates (/api/signals/route.ts)**
-- Added `search` parameter for company name search (ilike)
-- Added `has_contacts` parameter (true/false)
-- Added `date_from` and `date_to` parameters
-- Added `offset` parameter for pagination
-- Updated response format to include `{ data, total, hasMore }`
-- Added global signals filter (government data) to query
-
-**1.3 Domain Extraction Fix**
-- Created `src/lib/domain-resolver.ts` utility
-- `extractDomainFromOCDSParty()` - extracts domain from contact URL if available
-- `extractDomainFromUrl()` - validates and extracts domain from URL
-- All gov API files now return empty string instead of guessing domains
-- Contracts Finder and Find a Tender try OCDS party contact info first
-
-**1.4 Leadership Detection Fix (companies-house.ts)**
-- Rewrote `fetchRecentAppointments()` to filter by actual `appointed_on` date
-- Added `fetchRecentAppointmentsAlternative()` fallback method
-- Changed default lookback from 1 day to 7 days for better coverage
-- Added `getFilingHistory()` helper for future enhancements
-- Now properly filters to only executive roles (director, LLP designated member, etc.)
-
-### Files Created
-- `src/lib/domain-resolver.ts`
-
-### Files Modified
-- `src/app/(dashboard)/signals/SignalsPageClient.tsx` - Complete rewrite with filtering
-- `src/app/(dashboard)/signals/page.tsx` - Simplified to just render client component
-- `src/app/api/signals/route.ts` - Added all filter parameters
-- `src/lib/contracts-finder.ts` - Fixed domain extraction
-- `src/lib/find-a-tender.ts` - Fixed domain extraction
-- `src/lib/planning-data.ts` - Fixed domain extraction
-- `src/lib/companies-house.ts` - Fixed leadership detection + domain extraction
-
-### Build Status
-- Successfully builds with `npm run build`
-- No TypeScript errors
-- All routes compile correctly
+### Signal Mentis v2.0 - ICP Architecture - COMPLETED
+- [x] ICP profile system
+- [x] Contract/Tender signal filtering
+- [x] Search profile to pain analysis
 
 ---
 
-## Review - Phase 2 Completion
+## Review - Signal Detection Engine v2 Complete
 
-### Summary of Changes Made
+### Summary of Changes
 
-**2.1 Export Improvements (export.ts, /api/signals/export/route.ts)**
-- Added `contact_email_status` column to CSV export
-- Added `signalsToJson()` function for JSON export
-- Added `?format=json` parameter for JSON export
-- Added `?has_contacts=true/false` filter for exporting only signals with/without contacts
-- Added `?date_from=` and `?date_to=` parameters for date range filtering
-- Export now includes contacts via `signal_contacts` join
-- Export now includes global signals (government data)
-
-**2.2 HubSpot Integration (src/lib/integrations/hubspot.ts)**
-- Full OAuth 2.0 flow implementation
-- `getAuthorizationUrl()` - generates authorization URL with required scopes
-- `exchangeCodeForTokens()` - exchanges auth code for access/refresh tokens
-- `refreshAccessToken()` - refreshes expired access tokens
-- `upsertCompany()` - creates or updates company (searches by domain first)
-- `upsertContact()` - creates or updates contact (searches by email first)
-- `pushSignalToHubSpot()` - pushes signal + contacts, auto-associates
-- `testConnection()` - validates access token
-- Required scopes: companies.read/write, contacts.read/write, deals.read/write
-
-**2.3 HubSpot API Routes**
-- `GET /api/integrations/hubspot` - returns connection status
-- `POST /api/integrations/hubspot` - initiates OAuth or exchanges code
-- `DELETE /api/integrations/hubspot` - disconnects integration
-- `GET /api/integrations/hubspot/callback` - OAuth callback handler
-- `POST /api/integrations/hubspot/push` - pushes signal to HubSpot
+**Core Problem Fixed:**
+The system was ignoring `last_seen_at` when generating pain signals, showing jobs as "stale" even when companies were actively refreshing them. Now we distinguish between:
+- **Hard to Fill** (high value): Old job + recently refreshed = confirmed active pain
+- **Stale** (lower value): Old job + not refreshed = possibly abandoned
 
 ### Files Created
-- `src/lib/integrations/hubspot.ts`
-- `src/app/api/integrations/hubspot/route.ts`
-- `src/app/api/integrations/hubspot/callback/route.ts`
-- `src/app/api/integrations/hubspot/push/route.ts`
+- `src/lib/signals/detection.ts` - Central config for pain scores and signal type determination
+- `src/lib/signals/enrichment.ts` - Enrichment priority logic (prioritize hard_to_fill)
+- `scripts/migrate-signal-refresh-tracking.sql` - Database migration for days_since_refresh column
 
 ### Files Modified
-- `src/lib/export.ts` - Added email_status column, JSON export
-- `src/app/api/signals/export/route.ts` - Added all export filters
-- `src/types/index.ts` - Added HubSpot token fields to UserSettings
+- `src/app/api/cron/generate-pain-signals/route.ts` - Uses new detection logic, tracks hard_to_fill vs stale
+- `src/app/api/icp/[id]/scan/route.ts` - Uses new detection logic for ICP scans
+- `src/components/dashboard/CompaniesInPainDashboard.tsx` - Shows ACTIVE/STALE badges, updated stats
+- `src/lib/signal-explanations.ts` - Added explanations for new signal types
+
+### Key Implementation Details
+
+**Pain Scores (from detection.ts):**
+| Signal Type | Pain Score | Urgency |
+|-------------|------------|---------|
+| hard_to_fill_90 | 35 | immediate |
+| hard_to_fill_60 | 20 | immediate |
+| hard_to_fill_30 | 8 | short_term |
+| stale_job_90 | 25 | immediate |
+| stale_job_60 | 15 | short_term |
+| stale_job_30 | 5 | medium_term |
+
+**Refresh Threshold:** 14 days
+- Jobs seen within 14 days = "actively recruiting" = hard_to_fill
+- Jobs NOT seen in 14+ days = "possibly abandoned" = stale
+
+**UI Updates:**
+- Green "ACTIVE" badge for hard_to_fill signals
+- Amber "POSSIBLY STALE" badge for stale signals
+- New "Actively Recruiting" stat in dashboard header
 
 ### Database Migration Required
+Run in Supabase SQL Editor:
 ```sql
--- Add HubSpot integration columns to user_settings
-ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS hubspot_access_token text;
-ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS hubspot_refresh_token text;
-ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS hubspot_expires_at bigint;
-```
-
-### Environment Variables Required
-```
-HUBSPOT_CLIENT_ID=your_hubspot_client_id
-HUBSPOT_CLIENT_SECRET=your_hubspot_client_secret
-NEXT_PUBLIC_APP_URL=https://your-app-url.com
+ALTER TABLE company_pain_signals
+ADD COLUMN IF NOT EXISTS days_since_refresh INTEGER;
 ```
 
 ### Build Status
-- Successfully builds with `npm run build`
-- All new routes included: /api/integrations/hubspot/*
-- No TypeScript errors
-
----
-
-## Review - Phase 3 Completion
-
-### Summary of Changes Made
-
-**3.1 SIC Code to Industry Mapping (sic-codes.ts)**
-- Created comprehensive SIC code mapping for UK industries
-- `getIndustryFromSicCode()` - maps individual SIC codes to industry names
-- `getIndustryFromSicCodes()` - handles multiple SIC codes, returns first match
-- 100+ specific SIC codes mapped, plus section-level fallbacks
-
-**3.2 Industry Detection for Companies House (companies-house.ts)**
-- Updated `fetchRecentAppointments()` to fetch company details for SIC codes
-- Updated alternative approach with same industry detection
-- Industry field now populated in signals from Companies House
-
-**3.3 Industry Filter (SignalsPageClient.tsx, route.ts)**
-- Added industry dropdown filter with 15 common industries
-- Added `industry` query parameter to signals API
-- Filter uses ilike for partial matching
-
-**3.4 Signal Confidence Scoring (signal-scoring.ts)**
-- Created scoring algorithm (0-100 points):
-  - Source reliability: 0-40 points (government highest)
-  - Domain verification: 0-30 points
-  - Data completeness: 0-30 points
-- Score labels: High (70+), Medium (40-69), Low (<40)
-- Added confidence badge to SignalCard with tooltip
-
-**3.5 HubSpot UI Components**
-- Settings page: Connect/disconnect HubSpot section
-- Signal cards: "Push to HubSpot" button (orange upload icon)
-- Real-time connection status display
-
-### Files Created
-- `src/lib/sic-codes.ts` - SIC code to industry mapping
-- `src/lib/signal-scoring.ts` - Confidence scoring algorithm
-
-### Files Modified
-- `src/app/(dashboard)/signals/SignalsPageClient.tsx` - Industry filter
-- `src/app/api/signals/route.ts` - Industry query parameter
-- `src/lib/companies-house.ts` - Industry detection
-- `src/components/dashboard/SignalCard.tsx` - Confidence badge + HubSpot button
-- `src/app/(dashboard)/settings/page.tsx` - HubSpot connection section
-
-### Build Status
-- Successfully builds with `npm run build`
-- Deployed to https://signal-mentis.vercel.app
-
----
-
-## Review - Phase 3 Additional Updates
-
-### Summary of Additional Changes Made
-
-**3.3 Enrichment Data Quality (enrichment/index.ts)**
-- Added `SeniorityLevel` type: executive, senior, manager, individual, unknown
-- Created `detectSeniority()` function with regex matching for job titles
-- Seniority now calculated from searched role and stored with contacts
-- Updated `EnrichedContact` interface to include seniority field
-
-**3.1 Industry Detection for Firecrawl Signals (firecrawl.ts)**
-- Added `INDUSTRY_INSTRUCTION` constant for LLM prompt
-- Updated all 13 extraction prompts to request industry field
-- Updated `EXTRACTION_SCHEMA` to include industry property
-- AI will now detect industry from scraped web pages
-
-**Export & UI Updates**
-- Added `contact_seniority` column to CSV export
-- Added seniority badge display on contact cards (color-coded by level)
-- Purple = Executive, Blue = Senior, Green = Manager, Gray = Individual
-
-### Files Modified
-- `src/lib/enrichment/index.ts` - Seniority detection
-- `src/lib/firecrawl.ts` - Industry extraction prompts
-- `src/lib/signals.ts` - Industry field in signal insertion
-- `src/lib/export.ts` - Seniority column in CSV
-- `src/types/index.ts` - SeniorityLevel type, ExtractedSignal.industry
-- `src/components/dashboard/SignalCard.tsx` - Seniority badges
-- `src/app/api/signals/[id]/enrich/route.ts` - Seniority in DB insert
-- `src/app/api/signals/[id]/enrich/stream/route.ts` - Seniority in DB insert
-
-### Database Migration Required
-```sql
--- Add seniority column to signal_contacts
-ALTER TABLE signal_contacts ADD COLUMN IF NOT EXISTS seniority text;
-```
-
-### Build Status
-- Successfully builds with `npm run build`
-
----
-
-## Review - Phase 5 Agency Finder
-
-### Summary of Changes Made
-
-**5.1 Agency Signal Mapping (`src/lib/agency-signal-mapping.ts`)**
-- Created hiring urgency classification for all signal types: immediate, short_term, medium_term, speculative
-- `getSignalTypesForIndustries()` - Returns signals sorted by hiring urgency
-- `getHighUrgencySignals()` - Returns only immediate + short_term signals
-- `getSignalHiringContext()` - Human-readable explanation of why each signal indicates hiring
-
-**5.2 Agency Analyzer (`src/lib/agency-analyzer.ts`)**
-- Uses Firecrawl to scrape agency websites
-- Extracts: industries, role types, recruitment focus (perm/contract/temp)
-- Normalizes extracted industries to match system values
-- Calculates confidence score based on extraction quality
-
-**5.3 API Endpoints**
-- `POST /api/agency/analyze` - Analyzes agency website, returns detected specializations
-- `POST /api/agency/search` - SSE streaming endpoint that finds 5-10 signals
-
-**5.4 UI Components**
-- 4-step wizard: Input → Review → Searching → Results
-- Industry selection with badges
-- Signal type selection with urgency indicators
-- Location selection
-- Real-time SSE progress display
-- Results panel with CSV export
-
-### Files Created
-- `src/lib/agency-signal-mapping.ts`
-- `src/lib/agency-analyzer.ts`
-- `src/app/api/agency/analyze/route.ts`
-- `src/app/api/agency/search/route.ts`
-- `src/app/(dashboard)/agency/page.tsx`
-- `src/app/(dashboard)/agency/AgencyFinderClient.tsx`
-- `src/components/dashboard/AgencyResultsPanel.tsx`
-
-### Files Modified
-- `src/types/index.ts` - Added AgencyAnalysis interface
-- `src/components/dashboard/Sidebar.tsx` - Added Agency Finder nav item
-
-### Build Status
-- Successfully builds with `npm run build`
-- New routes: /agency, /api/agency/analyze, /api/agency/search
-
+- Build successful
+- All TypeScript compiles
+- No errors
