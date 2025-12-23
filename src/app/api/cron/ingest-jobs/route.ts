@@ -152,26 +152,37 @@ function detectIndustryFromTitle(title: string): string {
 }
 
 /**
- * Parse Reed date format (can be "dd/mm/yyyy" or ISO format)
+ * Parse Reed date format (can be "dd/mm/yyyy", ISO, or other formats)
  */
 function parseReedDate(dateStr: string): string | null {
   if (!dateStr) return null;
 
   try {
-    // Try ISO format first (2024-12-23T00:00:00)
-    const isoDate = new Date(dateStr);
-    if (!isNaN(isoDate.getTime())) {
-      return isoDate.toISOString().split('T')[0];
-    }
-
-    // Try UK format (dd/mm/yyyy)
-    const ukMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    // Try UK format first (dd/mm/yyyy with optional time)
+    // Reed uses this format
+    const ukMatch = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
     if (ukMatch) {
       const [, day, month, year] = ukMatch;
       const parsed = new Date(Number(year), Number(month) - 1, Number(day));
       if (!isNaN(parsed.getTime())) {
         return parsed.toISOString().split('T')[0];
       }
+    }
+
+    // Try ISO format (2024-12-23 or 2024-12-23T00:00:00)
+    const isoMatch = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) {
+      const [, year, month, day] = isoMatch;
+      const parsed = new Date(Number(year), Number(month) - 1, Number(day));
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toISOString().split('T')[0];
+      }
+    }
+
+    // Last resort: try native Date parsing
+    const nativeDate = new Date(dateStr);
+    if (!isNaN(nativeDate.getTime())) {
+      return nativeDate.toISOString().split('T')[0];
     }
 
     return null;
