@@ -1,8 +1,11 @@
 /**
- * Pain Signal Generation Cron Job
+ * Pain Signal Generation Cron Job (ICP-Aware)
  *
  * Daily job that analyzes job postings and contracts to generate
  * pain signals and calculate company pain scores.
+ *
+ * ONLY generates signals for companies matching active ICP profiles
+ * that have 'job_pain' signal type enabled.
  *
  * Schedule: 0 7 * * * (7am daily, after job ingestion)
  */
@@ -15,6 +18,9 @@ import {
   generateSignalTitle,
   generateSignalDetail,
 } from '@/lib/signals/detection';
+import { ICPProfile } from '@/types';
+
+export const maxDuration = 300;
 
 /**
  * Verify cron secret
@@ -22,6 +28,34 @@ import {
 function verifyCronSecret(request: NextRequest): boolean {
   const authHeader = request.headers.get('authorization');
   return authHeader === `Bearer ${process.env.CRON_SECRET}`;
+}
+
+/**
+ * Get all active ICP profiles that have 'job_pain' signal type enabled
+ */
+async function getJobPainICPs(supabase: ReturnType<typeof createAdminClient>): Promise<ICPProfile[]> {
+  const { data: profiles } = await supabase
+    .from('icp_profiles')
+    .select('*')
+    .eq('is_active', true);
+
+  if (!profiles) return [];
+
+  // Filter to only ICPs with job_pain signal type
+  return profiles.filter((p: ICPProfile) => p.signal_types.includes('job_pain'));
+}
+
+/**
+ * Check if a job location matches any ICP profile's locations
+ */
+function matchesICPLocations(location: string | null, icpProfiles: ICPProfile[]): ICPProfile[] {
+  if (!location) return icpProfiles; // If no location on job, match all ICPs
+
+  const locationLower = location.toLowerCase();
+  return icpProfiles.filter(icp => {
+    if (icp.locations.length === 0) return true; // ICP with no location filter = match all
+    return icp.locations.some(l => locationLower.includes(l.toLowerCase()));
+  });
 }
 
 export async function GET(request: NextRequest) {
@@ -39,11 +73,28 @@ export async function GET(request: NextRequest) {
     contract_signals: 0,
     referral_bonus_signals: 0,
     companies_scored: 0,
+    skipped_no_icp: false,
     errors: [] as string[],
   };
 
   try {
-    console.log('[generate-pain-signals] Starting pain signal generation...');
+    console.log('[generate-pain-signals] Starting ICP-aware pain signal generation...');
+
+    // Get all active ICP profiles with job_pain signal type
+    const jobPainICPs = await getJobPainICPs(supabase);
+
+    if (jobPainICPs.length === 0) {
+      console.log('[generate-pain-signals] Skipping - no ICPs with job_pain signal type');
+      stats.skipped_no_icp = true;
+      return NextResponse.json({
+        success: true,
+        message: 'Skipped - no ICPs with job_pain signal type',
+        stats,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    console.log(`[generate-pain-signals] Processing for ${jobPainICPs.length} ICPs with job_pain enabled`);
 
     // ==========================================
     // STEP 1: Generate Stale Job Signals
@@ -65,6 +116,10 @@ export async function GET(request: NextRequest) {
     } else if (staleJobs) {
       for (const job of staleJobs) {
         try {
+          // Find matching ICPs by location
+          const matchingICPs = matchesICPLocations(job.location, jobPainICPs);
+          if (matchingICPs.length === 0) continue;
+
           // Calculate days_open and days_since_refresh
           const daysOpen = Math.floor(
             (Date.now() - new Date(job.original_posted_date).getTime()) / (1000 * 60 * 60 * 24)
@@ -79,57 +134,62 @@ export async function GET(request: NextRequest) {
 
           const { signalType, painScore, urgency, isHardToFill } = signalConfig;
 
-          // Check if signal already exists (check for both stale and hard_to_fill variants)
-          const { data: existingSignals } = await supabase
-            .from('company_pain_signals')
-            .select('id, pain_signal_type')
-            .eq('company_id', job.company_id)
-            .eq('source_job_posting_id', job.id)
-            .or('pain_signal_type.like.stale_job%,pain_signal_type.like.hard_to_fill%')
-            .eq('is_active', true);
+          // Create signal for each matching ICP
+          for (const icp of matchingICPs) {
+            // Check if signal already exists for this ICP
+            const { data: existingSignals } = await supabase
+              .from('company_pain_signals')
+              .select('id, pain_signal_type')
+              .eq('company_id', job.company_id)
+              .eq('source_job_posting_id', job.id)
+              .eq('icp_profile_id', icp.id)
+              .or('pain_signal_type.like.stale_job%,pain_signal_type.like.hard_to_fill%')
+              .eq('is_active', true);
 
-          // Check if we need to create or update the signal
-          let shouldCreateSignal = false;
-          if (!existingSignals || existingSignals.length === 0) {
-            shouldCreateSignal = true;
-          } else {
-            // Signal exists - check if type has changed
-            const existingSignal = existingSignals[0];
-            if (existingSignal.pain_signal_type !== signalType) {
-              // Signal type has changed (e.g., stale -> hard_to_fill), deactivate old and create new
-              await supabase
-                .from('company_pain_signals')
-                .update({ is_active: false, resolved_at: new Date().toISOString() })
-                .eq('id', existingSignal.id);
+            // Check if we need to create or update the signal
+            let shouldCreateSignal = false;
+            if (!existingSignals || existingSignals.length === 0) {
               shouldCreateSignal = true;
-            }
-          }
-
-          if (shouldCreateSignal) {
-            await supabase.from('company_pain_signals').insert({
-              company_id: job.company_id,
-              pain_signal_type: signalType,
-              source_job_posting_id: job.id,
-              signal_title: generateSignalTitle(job.title, daysOpen, isHardToFill),
-              signal_detail: generateSignalDetail(
-                job.title,
-                job.companies?.name || '',
-                job.location,
-                daysOpen,
-                daysSinceRefresh,
-                isHardToFill
-              ),
-              signal_value: daysOpen,
-              days_since_refresh: daysSinceRefresh,
-              pain_score_contribution: painScore,
-              urgency,
-            });
-
-            // Update stats
-            if (isHardToFill) {
-              stats.hard_to_fill_signals++;
             } else {
-              stats.stale_signals++;
+              // Signal exists - check if type has changed
+              const existingSignal = existingSignals[0];
+              if (existingSignal.pain_signal_type !== signalType) {
+                // Signal type has changed (e.g., stale -> hard_to_fill), deactivate old and create new
+                await supabase
+                  .from('company_pain_signals')
+                  .update({ is_active: false, resolved_at: new Date().toISOString() })
+                  .eq('id', existingSignal.id);
+                shouldCreateSignal = true;
+              }
+            }
+
+            if (shouldCreateSignal) {
+              await supabase.from('company_pain_signals').insert({
+                company_id: job.company_id,
+                icp_profile_id: icp.id,
+                pain_signal_type: signalType,
+                source_job_posting_id: job.id,
+                signal_title: generateSignalTitle(job.title, daysOpen, isHardToFill),
+                signal_detail: generateSignalDetail(
+                  job.title,
+                  job.companies?.name || '',
+                  job.location,
+                  daysOpen,
+                  daysSinceRefresh,
+                  isHardToFill
+                ),
+                signal_value: daysOpen,
+                days_since_refresh: daysSinceRefresh,
+                pain_score_contribution: painScore,
+                urgency,
+              });
+
+              // Update stats
+              if (isHardToFill) {
+                stats.hard_to_fill_signals++;
+              } else {
+                stats.stale_signals++;
+              }
             }
           }
         } catch (error: unknown) {
@@ -155,6 +215,10 @@ export async function GET(request: NextRequest) {
     } else if (repostedJobs) {
       for (const job of repostedJobs) {
         try {
+          // Find matching ICPs by location
+          const matchingICPs = matchesICPLocations(job.location, jobPainICPs);
+          if (matchingICPs.length === 0) continue;
+
           let signalType: string;
           let painScore: number;
 
@@ -169,29 +233,34 @@ export async function GET(request: NextRequest) {
             painScore = PAIN_SCORES.job_reposted_once.pain_score;
           }
 
-          // Check for existing repost signal
-          const { data: existingSignal } = await supabase
-            .from('company_pain_signals')
-            .select('id')
-            .eq('company_id', job.company_id)
-            .eq('source_job_posting_id', job.id)
-            .like('pain_signal_type', 'job_reposted%')
-            .eq('is_active', true)
-            .single();
+          // Create signal for each matching ICP
+          for (const icp of matchingICPs) {
+            // Check for existing repost signal for this ICP
+            const { data: existingSignal } = await supabase
+              .from('company_pain_signals')
+              .select('id')
+              .eq('company_id', job.company_id)
+              .eq('source_job_posting_id', job.id)
+              .eq('icp_profile_id', icp.id)
+              .like('pain_signal_type', 'job_reposted%')
+              .eq('is_active', true)
+              .single();
 
-          if (!existingSignal) {
-            await supabase.from('company_pain_signals').insert({
-              company_id: job.company_id,
-              pain_signal_type: signalType,
-              source_job_posting_id: job.id,
-              signal_title: `${job.title} - Reposted ${job.repost_count}x`,
-              signal_detail: `This role has been reposted ${job.repost_count} time(s), indicating failed hiring attempts.`,
-              signal_value: job.repost_count,
-              pain_score_contribution: painScore,
-              urgency: 'immediate',
-            });
+            if (!existingSignal) {
+              await supabase.from('company_pain_signals').insert({
+                company_id: job.company_id,
+                icp_profile_id: icp.id,
+                pain_signal_type: signalType,
+                source_job_posting_id: job.id,
+                signal_title: `${job.title} - Reposted ${job.repost_count}x`,
+                signal_detail: `This role has been reposted ${job.repost_count} time(s), indicating failed hiring attempts.`,
+                signal_value: job.repost_count,
+                pain_score_contribution: painScore,
+                urgency: 'immediate',
+              });
 
-            stats.repost_signals++;
+              stats.repost_signals++;
+            }
           }
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : 'Unknown error';
@@ -216,6 +285,10 @@ export async function GET(request: NextRequest) {
     } else if (salaryIncreaseJobs) {
       for (const job of salaryIncreaseJobs) {
         try {
+          // Find matching ICPs by location
+          const matchingICPs = matchesICPLocations(job.location, jobPainICPs);
+          if (matchingICPs.length === 0) continue;
+
           const signalType =
             job.salary_increase_from_previous >= 20
               ? 'salary_increase_20_percent'
@@ -226,29 +299,34 @@ export async function GET(request: NextRequest) {
               ? PAIN_SCORES.salary_increase_20_percent.pain_score
               : PAIN_SCORES.salary_increase_10_percent.pain_score;
 
-          // Check for existing salary signal
-          const { data: existingSignal } = await supabase
-            .from('company_pain_signals')
-            .select('id')
-            .eq('company_id', job.company_id)
-            .eq('source_job_posting_id', job.id)
-            .like('pain_signal_type', 'salary_increase%')
-            .eq('is_active', true)
-            .single();
+          // Create signal for each matching ICP
+          for (const icp of matchingICPs) {
+            // Check for existing salary signal for this ICP
+            const { data: existingSignal } = await supabase
+              .from('company_pain_signals')
+              .select('id')
+              .eq('company_id', job.company_id)
+              .eq('source_job_posting_id', job.id)
+              .eq('icp_profile_id', icp.id)
+              .like('pain_signal_type', 'salary_increase%')
+              .eq('is_active', true)
+              .single();
 
-          if (!existingSignal) {
-            await supabase.from('company_pain_signals').insert({
-              company_id: job.company_id,
-              pain_signal_type: signalType,
-              source_job_posting_id: job.id,
-              signal_title: `${job.title} - Salary increased ${job.salary_increase_from_previous}%`,
-              signal_detail: `Salary for this role has increased by ${job.salary_increase_from_previous}% from previous posting, indicating market correction and hiring difficulty.`,
-              signal_value: job.salary_increase_from_previous,
-              pain_score_contribution: painScore,
-              urgency: 'immediate',
-            });
+            if (!existingSignal) {
+              await supabase.from('company_pain_signals').insert({
+                company_id: job.company_id,
+                icp_profile_id: icp.id,
+                pain_signal_type: signalType,
+                source_job_posting_id: job.id,
+                signal_title: `${job.title} - Salary increased ${job.salary_increase_from_previous}%`,
+                signal_detail: `Salary for this role has increased by ${job.salary_increase_from_previous}% from previous posting, indicating market correction and hiring difficulty.`,
+                signal_value: job.salary_increase_from_previous,
+                pain_score_contribution: painScore,
+                urgency: 'immediate',
+              });
 
-            stats.salary_increase_signals++;
+              stats.salary_increase_signals++;
+            }
           }
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : 'Unknown error';
@@ -273,33 +351,42 @@ export async function GET(request: NextRequest) {
     } else if (referralJobs) {
       for (const job of referralJobs) {
         try {
-          // Check for existing referral signal
-          const { data: existingSignal } = await supabase
-            .from('company_pain_signals')
-            .select('id')
-            .eq('company_id', job.company_id)
-            .eq('source_job_posting_id', job.id)
-            .eq('pain_signal_type', 'high_referral_bonus')
-            .eq('is_active', true)
-            .single();
+          // Find matching ICPs by location
+          const matchingICPs = matchesICPLocations(job.location, jobPainICPs);
+          if (matchingICPs.length === 0) continue;
 
-          if (!existingSignal) {
-            const bonusText = job.referral_bonus_amount
-              ? `£${job.referral_bonus_amount.toLocaleString()}`
-              : 'offered';
+          // Create signal for each matching ICP
+          for (const icp of matchingICPs) {
+            // Check for existing referral signal for this ICP
+            const { data: existingSignal } = await supabase
+              .from('company_pain_signals')
+              .select('id')
+              .eq('company_id', job.company_id)
+              .eq('source_job_posting_id', job.id)
+              .eq('icp_profile_id', icp.id)
+              .eq('pain_signal_type', 'high_referral_bonus')
+              .eq('is_active', true)
+              .single();
 
-            await supabase.from('company_pain_signals').insert({
-              company_id: job.company_id,
-              pain_signal_type: 'high_referral_bonus',
-              source_job_posting_id: job.id,
-              signal_title: `${job.title} - Referral bonus ${bonusText}`,
-              signal_detail: `Company is offering a referral bonus for this role, indicating difficulty finding candidates through normal channels.`,
-              signal_value: job.referral_bonus_amount || 0,
-              pain_score_contribution: PAIN_SCORES.high_referral_bonus.pain_score,
-              urgency: 'short_term',
-            });
+            if (!existingSignal) {
+              const bonusText = job.referral_bonus_amount
+                ? `£${job.referral_bonus_amount.toLocaleString()}`
+                : 'offered';
 
-            stats.referral_bonus_signals++;
+              await supabase.from('company_pain_signals').insert({
+                company_id: job.company_id,
+                icp_profile_id: icp.id,
+                pain_signal_type: 'high_referral_bonus',
+                source_job_posting_id: job.id,
+                signal_title: `${job.title} - Referral bonus ${bonusText}`,
+                signal_detail: `Company is offering a referral bonus for this role, indicating difficulty finding candidates through normal channels.`,
+                signal_value: job.referral_bonus_amount || 0,
+                pain_score_contribution: PAIN_SCORES.high_referral_bonus.pain_score,
+                urgency: 'short_term',
+              });
+
+              stats.referral_bonus_signals++;
+            }
           }
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : 'Unknown error';
@@ -310,102 +397,129 @@ export async function GET(request: NextRequest) {
 
     // ==========================================
     // STEP 5: Generate Contract-Without-Hiring Signals
+    // (Only for ICPs with contracts_awarded signal type)
     // ==========================================
     console.log('[generate-pain-signals] Checking contracts without hiring...');
 
-    const ninetyDaysAgo = new Date();
-    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    // Get ICPs with contracts_awarded signal type
+    const contractICPs = (await supabase
+      .from('icp_profiles')
+      .select('*')
+      .eq('is_active', true))
+      .data?.filter((p: ICPProfile) => p.signal_types.includes('contracts_awarded')) || [];
 
-    const { data: recentContracts, error: contractError } = await supabase
-      .from('contract_awards')
-      .select('*, companies!inner(id, name)')
-      .gte('award_date', ninetyDaysAgo.toISOString().split('T')[0])
-      .gte('value_gbp', 500000);
+    if (contractICPs.length === 0) {
+      console.log('[generate-pain-signals] Skipping contract signals - no ICPs with contracts_awarded');
+    } else {
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-    if (contractError) {
-      stats.errors.push(`Contract query error: ${contractError.message}`);
-    } else if (recentContracts) {
-      for (const contract of recentContracts) {
-        if (!contract.company_id) continue;
+      const { data: recentContracts, error: contractError } = await supabase
+        .from('contract_awards')
+        .select('*, companies!inner(id, name)')
+        .gte('award_date', ninetyDaysAgo.toISOString().split('T')[0])
+        .gte('value_gbp', 500000);
 
-        try {
-          // Count jobs posted after contract award
-          const { count: jobCount } = await supabase
-            .from('job_postings')
-            .select('*', { count: 'exact', head: true })
-            .eq('company_id', contract.company_id)
-            .gte('original_posted_date', contract.award_date);
+      if (contractError) {
+        stats.errors.push(`Contract query error: ${contractError.message}`);
+      } else if (recentContracts) {
+        for (const contract of recentContracts) {
+          if (!contract.company_id) continue;
 
-          const daysSinceAward = Math.floor(
-            (Date.now() - new Date(contract.award_date).getTime()) /
-              (1000 * 60 * 60 * 24)
-          );
-
-          // Update contract record
-          if (daysSinceAward >= 30) {
-            await supabase
-              .from('contract_awards')
-              .update({ jobs_posted_within_30_days: jobCount || 0 })
-              .eq('id', contract.id);
-          }
-          if (daysSinceAward >= 60) {
-            await supabase
-              .from('contract_awards')
-              .update({ jobs_posted_within_60_days: jobCount || 0 })
-              .eq('id', contract.id);
-          }
-
-          // Generate signal if no hiring
-          if ((jobCount || 0) === 0 && daysSinceAward >= 30) {
-            const signalType =
-              daysSinceAward >= 60
-                ? 'contract_no_hiring_60_days'
-                : 'contract_no_hiring_30_days';
-
-            const painScore =
-              daysSinceAward >= 60
-                ? PAIN_SCORES.contract_no_hiring_60_days.pain_score
-                : PAIN_SCORES.contract_no_hiring_30_days.pain_score;
-
-            // Check for existing contract signal
-            const { data: existingSignal } = await supabase
-              .from('company_pain_signals')
-              .select('id')
-              .eq('company_id', contract.company_id)
-              .eq('source_contract_id', contract.id)
-              .like('pain_signal_type', 'contract_no_hiring%')
-              .eq('is_active', true)
+          try {
+            // Find matching ICPs by company location (from companies table)
+            const { data: company } = await supabase
+              .from('companies')
+              .select('location')
+              .eq('id', contract.company_id)
               .single();
 
-            if (!existingSignal) {
-              const valueText =
-                contract.value_gbp >= 1000000
-                  ? `£${(Number(contract.value_gbp) / 1000000).toFixed(1)}M`
-                  : `£${(Number(contract.value_gbp) / 1000).toFixed(0)}k`;
+            const matchingICPs = matchesICPLocations(company?.location || null, contractICPs);
+            if (matchingICPs.length === 0) continue;
 
-              await supabase.from('company_pain_signals').insert({
-                company_id: contract.company_id,
-                pain_signal_type: signalType,
-                source_contract_id: contract.id,
-                signal_title: `${valueText} contract - No hiring after ${daysSinceAward} days`,
-                signal_detail: `${contract.companies?.name} won a ${valueText} contract "${contract.title}" ${daysSinceAward} days ago but has posted no jobs. Likely capacity constraint.`,
-                signal_value: daysSinceAward,
-                pain_score_contribution: painScore,
-                urgency: 'immediate',
-              });
+            // Count jobs posted after contract award
+            const { count: jobCount } = await supabase
+              .from('job_postings')
+              .select('*', { count: 'exact', head: true })
+              .eq('company_id', contract.company_id)
+              .gte('original_posted_date', contract.award_date);
 
-              stats.contract_signals++;
+            const daysSinceAward = Math.floor(
+              (Date.now() - new Date(contract.award_date).getTime()) /
+                (1000 * 60 * 60 * 24)
+            );
 
-              // Update contract flag
+            // Update contract record
+            if (daysSinceAward >= 30) {
               await supabase
                 .from('contract_awards')
-                .update({ hiring_bottleneck_flag: true })
+                .update({ jobs_posted_within_30_days: jobCount || 0 })
                 .eq('id', contract.id);
             }
+            if (daysSinceAward >= 60) {
+              await supabase
+                .from('contract_awards')
+                .update({ jobs_posted_within_60_days: jobCount || 0 })
+                .eq('id', contract.id);
+            }
+
+            // Generate signal if no hiring
+            if ((jobCount || 0) === 0 && daysSinceAward >= 30) {
+              const signalType =
+                daysSinceAward >= 60
+                  ? 'contract_no_hiring_60_days'
+                  : 'contract_no_hiring_30_days';
+
+              const painScore =
+                daysSinceAward >= 60
+                  ? PAIN_SCORES.contract_no_hiring_60_days.pain_score
+                  : PAIN_SCORES.contract_no_hiring_30_days.pain_score;
+
+              // Create signal for each matching ICP
+              for (const icp of matchingICPs) {
+                // Check for existing contract signal for this ICP
+                const { data: existingSignal } = await supabase
+                  .from('company_pain_signals')
+                  .select('id')
+                  .eq('company_id', contract.company_id)
+                  .eq('source_contract_id', contract.id)
+                  .eq('icp_profile_id', icp.id)
+                  .like('pain_signal_type', 'contract_no_hiring%')
+                  .eq('is_active', true)
+                  .single();
+
+                if (!existingSignal) {
+                  const valueText =
+                    contract.value_gbp >= 1000000
+                      ? `£${(Number(contract.value_gbp) / 1000000).toFixed(1)}M`
+                      : `£${(Number(contract.value_gbp) / 1000).toFixed(0)}k`;
+
+                  await supabase.from('company_pain_signals').insert({
+                    company_id: contract.company_id,
+                    icp_profile_id: icp.id,
+                    pain_signal_type: signalType,
+                    source_contract_id: contract.id,
+                    signal_title: `${valueText} contract - No hiring after ${daysSinceAward} days`,
+                    signal_detail: `${contract.companies?.name} won a ${valueText} contract "${contract.title}" ${daysSinceAward} days ago but has posted no jobs. Likely capacity constraint.`,
+                    signal_value: daysSinceAward,
+                    pain_score_contribution: painScore,
+                    urgency: 'immediate',
+                  });
+
+                  stats.contract_signals++;
+
+                  // Update contract flag
+                  await supabase
+                    .from('contract_awards')
+                    .update({ hiring_bottleneck_flag: true })
+                    .eq('id', contract.id);
+                }
+              }
+            }
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            stats.errors.push(`Contract ${contract.id}: ${message}`);
           }
-        } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : 'Unknown error';
-          stats.errors.push(`Contract ${contract.id}: ${message}`);
         }
       }
     }

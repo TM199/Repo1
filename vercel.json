@@ -11,28 +11,42 @@
     },
     "src/app/api/companies/enrich-all/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/cron/process-scan-queue/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/cron/rescan-icp-jobs/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
     {
-      "path": "/api/cron/ingest-jobs",
+      "path": "/api/cron/ingest-jobs?group=london",
       "schedule": "0 */4 * * *"
     },
     {
+      "path": "/api/cron/ingest-jobs?group=major",
+      "schedule": "15 */2 * * *"
+    },
+    {
+      "path": "/api/cron/ingest-jobs?group=regional",
+      "schedule": "30 */2 * * *"
+    },
+    {
       "path": "/api/cron/generate-pain-signals",
-      "schedule": "30 6 * * *"
+      "schedule": "45 */2 * * *"
     },
     {
       "path": "/api/cron/government",
       "schedule": "0 5 * * *"
     },
     {
-      "path": "/api/cron/daily",
-      "schedule": "0 7 * * *"
+      "path": "/api/cron/process-scan-queue",
+      "schedule": "*/15 * * * *"
     },
     {
-      "path": "/api/cron/weekly",
-      "schedule": "0 7 * * 1"
+      "path": "/api/cron/rescan-icp-jobs",
+      "schedule": "0 6,12,18 * * *"
     }
   ]
 }

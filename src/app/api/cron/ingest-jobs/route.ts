@@ -1,10 +1,10 @@
 /**
  * Job Ingestion Cron Job
  *
- * Daily job that fetches jobs from Reed and Adzuna, creates companies,
- * and tracks job fingerprints for staleness and repost detection.
+ * Fetches jobs from Reed, creates companies, and tracks job
+ * fingerprints for staleness and repost detection.
  *
- * Schedule: 0 6 * * * (6am daily)
+ * Schedule: every 4 hours
  */
 
 export const maxDuration = 300; // 5 minutes (Vercel Pro)
@@ -14,14 +14,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 import {
   searchReedMultipleLocations,
   isRecruitmentAgency,
-  type ReedJob,
 } from '@/lib/job-boards';
-import {
-  searchAdzunaAllCategories,
-  isAdzunaConfigured,
-  mapCategoryToIndustry,
-  type AdzunaJob,
-} from '@/lib/adzuna';
 import { findOrCreateCompany } from '@/lib/companies/company-matcher';
 import {
   generateJobFingerprint,
@@ -31,7 +24,6 @@ import {
 } from '@/lib/jobs/job-fingerprint';
 import {
   parseReedSalary,
-  parseAdzunaSalary,
   calculateSalaryIncrease,
   detectReferralBonus,
 } from '@/lib/jobs/salary-normalizer';
@@ -44,6 +36,13 @@ const DEFAULT_UK_REGIONS = [
   'Leeds',
   'Bristol',
 ];
+
+// Location groups for distributed cron scheduling (prevents timeout)
+const LOCATION_GROUPS: Record<string, string[]> = {
+  london: ['London'],
+  major: ['Manchester', 'Birmingham', 'Leeds', 'Bristol'],
+  regional: ['Newcastle', 'Nottingham', 'Cardiff', 'Glasgow', 'Edinburgh', 'Liverpool', 'Sheffield'],
+};
 
 /**
  * Get unique locations from all active ICP profiles
@@ -207,10 +206,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // Get location group from query parameter (for distributed cron scheduling)
+  const group = request.nextUrl.searchParams.get('group');
+
   const supabase = createAdminClient();
   const stats = {
     reed_jobs_fetched: 0,
-    adzuna_jobs_fetched: 0,
     new_jobs_created: 0,
     existing_jobs_updated: 0,
     reposts_detected: 0,
@@ -220,13 +221,28 @@ export async function GET(request: NextRequest) {
   };
 
   try {
-    console.log('[ingest-jobs] Starting job ingestion...');
+    console.log(`[ingest-jobs] Starting job ingestion${group ? ` (group: ${group})` : ''}...`);
 
     // ==========================================
     // STEP 0: Get ICP-driven configuration
     // ==========================================
-    const icpLocations = await getICPLocations(supabase);
+    let icpLocations = await getICPLocations(supabase);
     const icpIndustries = await getICPIndustries(supabase);
+
+    // Filter by location group if specified (for distributed cron scheduling)
+    if (group && LOCATION_GROUPS[group]) {
+      const groupLocations = LOCATION_GROUPS[group];
+      icpLocations = icpLocations.filter(loc =>
+        groupLocations.some(g => loc.toLowerCase().includes(g.toLowerCase()))
+      );
+      console.log(`[ingest-jobs] Group "${group}" - filtered to: ${icpLocations.join(', ') || 'none'}`);
+
+      // Use group defaults if no ICP locations match this group
+      if (icpLocations.length === 0) {
+        icpLocations = groupLocations;
+        console.log(`[ingest-jobs] Group "${group}" - using defaults: ${icpLocations.join(', ')}`);
+      }
+    }
 
     console.log(`[ingest-jobs] ICP Config - Locations: ${icpLocations.join(', ')}`);
     console.log(`[ingest-jobs] ICP Config - Industries: ${icpIndustries.size > 0 ? Array.from(icpIndustries).join(', ') : 'All'}`);
@@ -237,23 +253,17 @@ export async function GET(request: NextRequest) {
     console.log('[ingest-jobs] Fetching Reed jobs...');
 
     const reedJobs = await searchReedMultipleLocations({
-      locations: icpLocations.slice(0, 5), // Limit to 5 locations (works within timeout)
-      postedWithin: 7,
+      locations: icpLocations, // Location group filtering already applied above
+      postedWithin: 365, // Full year - captures old active jobs for "hard to fill" detection
       postedByDirectEmployer: true,
-      maxPerLocation: 100, // 100 jobs per location = ~500 jobs max
+      maxPerLocation: 2000, // ~2000 jobs/location
     });
 
     stats.reed_jobs_fetched = reedJobs.length;
     console.log(`[ingest-jobs] Fetched ${reedJobs.length} Reed jobs`);
 
     // ==========================================
-    // STEP 2: Adzuna disabled (API not working reliably)
-    // ==========================================
-    const adzunaJobs: AdzunaJob[] = [];
-    console.log('[ingest-jobs] Adzuna disabled - using Reed only');
-
-    // ==========================================
-    // STEP 3: Process Reed jobs
+    // STEP 2: Process Reed jobs
     // ==========================================
     console.log('[ingest-jobs] Processing Reed jobs...');
 
@@ -291,47 +301,7 @@ export async function GET(request: NextRequest) {
     }
 
     // ==========================================
-    // STEP 4: Process Adzuna jobs
-    // ==========================================
-    console.log('[ingest-jobs] Processing Adzuna jobs...');
-
-    for (const adzunaJob of adzunaJobs) {
-      try {
-        // Skip recruitment agencies
-        if (
-          isRecruitmentAgency(
-            adzunaJob.company?.display_name || '',
-            adzunaJob.description
-          )
-        ) {
-          continue;
-        }
-
-        const industry =
-          detectIndustryFromTitle(adzunaJob.title) ||
-          mapCategoryToIndustry(adzunaJob.category?.tag);
-
-        await processJob(supabase, {
-          source: 'adzuna',
-          sourceId: adzunaJob.id,
-          title: adzunaJob.title,
-          companyName: adzunaJob.company?.display_name || 'Unknown',
-          location: adzunaJob.location?.display_name || '',
-          postedDate: adzunaJob.created,
-          sourceUrl: adzunaJob.redirect_url,
-          description: adzunaJob.description,
-          salary: parseAdzunaSalary(adzunaJob),
-          detectedIndustry: industry,
-          contractType: adzunaJob.contract_type,
-        }, stats);
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        stats.errors.push(`Adzuna job ${adzunaJob.id}: ${message}`);
-      }
-    }
-
-    // ==========================================
-    // STEP 5: Mark stale jobs as inactive
+    // STEP 3: Mark stale jobs as inactive
     // ==========================================
     console.log('[ingest-jobs] Marking stale jobs as inactive...');
 
@@ -375,7 +345,7 @@ export async function GET(request: NextRequest) {
 async function processJob(
   supabase: ReturnType<typeof createAdminClient>,
   job: {
-    source: 'reed' | 'adzuna';
+    source: 'reed';
     sourceId: string;
     title: string;
     companyName: string;
@@ -494,8 +464,7 @@ async function processJob(
   // Insert new job posting
   const { error: insertError } = await supabase.from('job_postings').insert({
     company_id: company.id,
-    reed_job_id: job.source === 'reed' ? job.sourceId : null,
-    adzuna_job_id: job.source === 'adzuna' ? job.sourceId : null,
+    reed_job_id: job.sourceId,
     fingerprint,
     title: job.title,
     title_normalized: normalizeJobTitle(job.title),

@@ -470,13 +470,16 @@ export async function getReedJobDetails(jobId: number): Promise<ReedJob | null> 
 /**
  * Fetch all Reed results with pagination
  * Used by daily ingestion cron job
+ *
+ * IMPORTANT: Set maxResults high or undefined to get ALL jobs.
+ * Reed API returns up to 100 per page, we paginate through all.
  */
 export async function fetchAllReedResults(params: {
   keywords?: string;
   locationName?: string;
   postedWithin?: number;
   postedByDirectEmployer?: boolean;
-  maxResults?: number;
+  maxResults?: number; // If not set, fetches ALL available jobs
 }): Promise<ReedJob[]> {
   const apiKey = process.env.REED_API_KEY;
 
@@ -488,7 +491,8 @@ export async function fetchAllReedResults(params: {
   const allJobs: ReedJob[] = [];
   const take = 100; // Reed max per page
   let skip = 0;
-  const maxResults = params.maxResults || 1000;
+  const maxResults = params.maxResults || 10000; // High default to get all jobs
+  let totalAvailable = 0;
 
   try {
     while (allJobs.length < maxResults) {
@@ -516,6 +520,12 @@ export async function fetchAllReedResults(params: {
 
       const data: ReedSearchResponse = await response.json();
 
+      // Log total available on first page
+      if (skip === 0) {
+        totalAvailable = data.totalResults || 0;
+        console.log(`[job-boards] Reed API: ${totalAvailable} total jobs available for "${params.locationName || 'all locations'}"`);
+      }
+
       if (!data.results || data.results.length === 0) {
         break; // No more results
       }
@@ -532,7 +542,9 @@ export async function fetchAllReedResults(params: {
       }
     }
 
-    console.log(`[job-boards] fetchAllReedResults: Retrieved ${allJobs.length} jobs`);
+    const coverage = totalAvailable > 0 ? Math.round((allJobs.length / totalAvailable) * 100) : 100;
+    console.log(`[job-boards] fetchAllReedResults: Retrieved ${allJobs.length}/${totalAvailable} jobs (${coverage}% coverage)`);
+
     return allJobs.slice(0, maxResults);
   } catch (error) {
     console.error('[job-boards] fetchAllReedResults failed:', error);
@@ -558,7 +570,7 @@ export async function searchReedMultipleLocations(params: {
         locationName: location,
         postedWithin: params.postedWithin || 7,
         postedByDirectEmployer: params.postedByDirectEmployer ?? true,
-        maxResults: params.maxPerLocation || 200,
+        maxResults: params.maxPerLocation || 5000, // Default high to get all jobs
       });
 
       // Dedupe across locations
@@ -577,6 +589,135 @@ export async function searchReedMultipleLocations(params: {
   }
 
   console.log(`[job-boards] searchReedMultipleLocations: ${allJobs.length} unique jobs across ${params.locations.length} locations`);
+  return allJobs;
+}
+
+/**
+ * UK National Locations for broad coverage searches
+ * These 8 cities cover ~70% of UK job postings
+ */
+export const UK_NATIONAL_LOCATIONS = [
+  'London',
+  'Manchester',
+  'Birmingham',
+  'Leeds',
+  'Bristol',
+  'Edinburgh',
+  'Glasgow',
+  'Newcastle',
+];
+
+/**
+ * Search Reed in PARALLEL across multiple locations for a keyword
+ * Much faster than sequential searching - used for ICP scans
+ */
+export async function searchReedParallel(params: {
+  keywords: string;
+  locations: string[];
+  postedWithin?: number;
+  directEmployerOnly?: boolean;
+  limitPerLocation?: number;
+  apiKey?: string; // Optional: use specific API key instead of env
+}): Promise<ReedJob[]> {
+  const apiKey = params.apiKey || process.env.REED_API_KEY;
+
+  if (!apiKey) {
+    console.warn('[job-boards] No Reed API key available, skipping parallel search');
+    return [];
+  }
+
+  const postedWithin = params.postedWithin || 30;
+  const limitPerLocation = params.limitPerLocation || 200; // Higher default for parallel searches
+
+  // Launch all searches in parallel
+  const searchPromises = params.locations.map(async (location) => {
+    try {
+      const url = new URL(REED_API_URL);
+      url.searchParams.set('keywords', params.keywords);
+      url.searchParams.set('locationName', location);
+      url.searchParams.set('postedWithin', String(postedWithin));
+      url.searchParams.set('resultsToTake', String(limitPerLocation));
+
+      if (params.directEmployerOnly !== false) {
+        url.searchParams.set('postedByDirectEmployer', 'true');
+      }
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: 'Basic ' + Buffer.from(`${apiKey}:`).toString('base64'),
+        },
+      });
+
+      if (!response.ok) {
+        console.error(`[job-boards] Reed API error for ${location}:`, response.status);
+        return [];
+      }
+
+      const data: ReedSearchResponse = await response.json();
+      return data.results || [];
+    } catch (error) {
+      console.error(`[job-boards] Reed parallel search error for ${location}:`, error);
+      return [];
+    }
+  });
+
+  // Wait for all searches to complete
+  const results = await Promise.all(searchPromises);
+
+  // Deduplicate by jobId
+  const allJobs: ReedJob[] = [];
+  const seenJobIds = new Set<number>();
+
+  for (const jobs of results) {
+    for (const job of jobs) {
+      if (!seenJobIds.has(job.jobId)) {
+        seenJobIds.add(job.jobId);
+        allJobs.push(job);
+      }
+    }
+  }
+
+  console.log(`[job-boards] searchReedParallel("${params.keywords}"): ${allJobs.length} unique jobs across ${params.locations.length} locations`);
+  return allJobs;
+}
+
+/**
+ * Search Reed for multiple keywords in parallel (for role variations)
+ */
+export async function searchReedMultipleKeywords(params: {
+  keywords: string[];
+  locations: string[];
+  postedWithin?: number;
+  directEmployerOnly?: boolean;
+  limitPerSearch?: number;
+  apiKey?: string;
+}): Promise<ReedJob[]> {
+  const allJobs: ReedJob[] = [];
+  const seenJobIds = new Set<number>();
+
+  // Search each keyword across all locations
+  for (const keyword of params.keywords) {
+    const jobs = await searchReedParallel({
+      keywords: keyword,
+      locations: params.locations,
+      postedWithin: params.postedWithin,
+      directEmployerOnly: params.directEmployerOnly,
+      limitPerLocation: params.limitPerSearch || 200, // Higher default for keyword searches
+      apiKey: params.apiKey,
+    });
+
+    for (const job of jobs) {
+      if (!seenJobIds.has(job.jobId)) {
+        seenJobIds.add(job.jobId);
+        allJobs.push(job);
+      }
+    }
+
+    // Small delay between keyword batches
+    await sleep(50);
+  }
+
+  console.log(`[job-boards] searchReedMultipleKeywords: ${allJobs.length} unique jobs for ${params.keywords.length} keywords`);
   return allJobs;
 }
 

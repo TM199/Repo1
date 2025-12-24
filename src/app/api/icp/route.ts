@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ICPProfile } from '@/types';
+import { canCreateIcpProfile, getIcpSlots } from '@/lib/rate-limiter';
 
 // GET /api/icp - List all ICP profiles for the user
 export async function GET() {
@@ -27,7 +28,10 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ profiles });
+  // Include ICP slots info for the UI
+  const slots = await getIcpSlots(user.id);
+
+  return NextResponse.json({ profiles, slots });
 }
 
 // POST /api/icp - Create new ICP profile
@@ -44,6 +48,15 @@ export async function POST(request: NextRequest) {
   // Validate required fields
   if (!body.name) {
     return NextResponse.json({ error: 'Profile name is required' }, { status: 400 });
+  }
+
+  // Check ICP profile limit (3 profiles per API key)
+  const { allowed, reason, slots } = await canCreateIcpProfile(user.id);
+  if (!allowed) {
+    return NextResponse.json({
+      error: reason,
+      slots,
+    }, { status: 403 });
   }
 
   const profile: Partial<ICPProfile> = {

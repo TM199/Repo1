@@ -221,4 +221,81 @@ export interface ICPProfile {
 
   created_at: string;
   updated_at: string;
+
+  // Scan status (added for queue system)
+  scan_status?: 'idle' | 'scanning' | 'expanding' | 'completed' | 'failed';
+  scan_batch_id?: string;
+  scan_progress?: ScanProgress;
+
+  // API key assignment
+  api_key_id?: string;
+}
+
+// Scan progress tracking
+export interface ScanProgress {
+  jobs_found: number;
+  companies_found: number;
+  signals_generated: number;
+  tasks_pending: number;
+  tasks_completed: number;
+  last_updated: string;
+}
+
+// Scan queue task
+export type ScanQueueTaskType = 'role_variation' | 'expanded_location' | 'industry_search';
+export type ScanQueueStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'skipped';
+
+export interface ScanQueueTask {
+  id: string;
+  icp_profile_id: string;
+  batch_id: string;
+
+  task_type: ScanQueueTaskType;
+  keywords: string;
+  location: string;
+
+  status: ScanQueueStatus;
+  priority: number;
+  attempts: number;
+  max_attempts: number;
+
+  jobs_found: number;
+  error_message: string | null;
+
+  created_at: string;
+  scheduled_for: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+// API usage tracking
+export interface ApiUsage {
+  id: string;
+  api_name: string;
+  api_key_id: string | null;
+  date: string;
+  calls_made: number;
+  calls_limit: number;
+  last_call_at: string | null;
+}
+
+// API key management
+export interface ApiKey {
+  id: string;
+  user_id: string;
+  api_name: string;
+  api_key_encrypted: string;
+  label: string | null;
+  daily_limit: number;
+  is_active: boolean;
+  is_unlimited: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ICP slots info
+export interface IcpSlots {
+  used: number;
+  total: number;
+  remaining: number;
 }

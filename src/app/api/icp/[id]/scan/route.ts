@@ -9,7 +9,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import {
-  searchReed,
+  searchReedParallel,
+  searchReedMultipleKeywords,
+  UK_NATIONAL_LOCATIONS,
   isRecruitmentAgency,
   filterByEmploymentType,
 } from '@/lib/job-boards';
@@ -35,6 +37,8 @@ import {
   generateSignalTitle,
   generateSignalDetail
 } from '@/lib/signals/detection';
+import { queueExpansionTasks } from '@/lib/scan-queue';
+import { randomUUID } from 'crypto';
 
 // Industry detection from job titles
 const INDUSTRY_PATTERNS: Record<string, RegExp[]> = {
@@ -121,6 +125,7 @@ export async function POST(
     signals_generated: 0,
     contracts_found: 0,
     contracts_matched: 0,
+    expansion_tasks_queued: 0,
     errors: [] as string[],
   };
 
@@ -153,8 +158,19 @@ export async function POST(
       });
     }
 
-    // Fetch jobs from Reed by role + location (with variations)
-    console.log(`[ICP Scan] Searching for ${roles.length} roles across ${locations.length} locations`);
+    // Use parallel search across locations for better performance
+    // Include UK national locations for broader coverage
+    const searchLocations = locations.length > 0
+      ? [...new Set([...locations, ...UK_NATIONAL_LOCATIONS.slice(0, 5)])]
+      : UK_NATIONAL_LOCATIONS;
+
+    console.log(`[ICP Scan] Searching for ${roles.length} roles across ${searchLocations.length} locations (parallel)`);
+
+    // Set scan status to 'scanning'
+    await adminClient
+      .from('icp_profiles')
+      .update({ scan_status: 'scanning' })
+      .eq('id', id);
 
     const allReedJobs: Array<{
       jobId: number;
@@ -172,53 +188,49 @@ export async function POST(
     }> = [];
     const seenJobIds = new Set<number>();
 
-    // Search for each role (limit to 5 roles for speed)
+    // Build search keywords from roles (top 2 variations per role)
+    const searchKeywords: string[] = [];
+    const searchedRoles: string[] = [];
     for (const role of roles.slice(0, 5)) {
       const searchTerms = getRoleSearchTerms(role);
-      const primaryTerm = searchTerms[0]; // Use primary role name
+      // Use top 2 variations
+      searchKeywords.push(...searchTerms.slice(0, 2));
+      searchedRoles.push(...searchTerms.slice(0, 2));
+    }
 
-      // Search each location
-      for (const location of locations.slice(0, 3)) {
-        try {
-          const jobs = await searchReed({
-            keywords: primaryTerm,
-            location,
-            postedWithin: 30,
-            directEmployerOnly: true,
-            limit: 25,
+    // Parallel search across all locations with multiple keywords
+    try {
+      const jobs = await searchReedMultipleKeywords({
+        keywords: [...new Set(searchKeywords)], // Dedupe keywords
+        locations: searchLocations,
+        postedWithin: 365, // Full year - captures old active jobs for immediate "hard to fill" signals
+        directEmployerOnly: true,
+        limitPerSearch: 500, // Get more jobs per search (pagination handles this)
+      });
+
+      // Jobs are already in ReedJob format
+      for (const job of jobs) {
+        if (!seenJobIds.has(job.jobId)) {
+          seenJobIds.add(job.jobId);
+          allReedJobs.push({
+            jobId: job.jobId,
+            employerName: job.employerName,
+            jobTitle: job.jobTitle,
+            locationName: job.locationName,
+            jobDescription: job.jobDescription || '',
+            jobUrl: job.jobUrl,
+            date: job.date,
+            minimumSalary: job.minimumSalary,
+            maximumSalary: job.maximumSalary,
+            applications: job.applications || 0,
+            expirationDate: job.expirationDate || '',
+            currency: job.currency || 'GBP',
           });
-
-          // Convert JobBoardResult back to ReedJob-like format for processing
-          for (const job of jobs) {
-            // Create a pseudo-jobId from URL
-            const jobIdMatch = job.signal_url.match(/\/job\/(\d+)/);
-            const jobId = jobIdMatch ? parseInt(jobIdMatch[1]) : Math.random() * 1000000;
-
-            if (!seenJobIds.has(jobId)) {
-              seenJobIds.add(jobId);
-              allReedJobs.push({
-                jobId,
-                employerName: job.company_name,
-                jobTitle: job.signal_title,
-                locationName: location,
-                jobDescription: job.job_description || '',
-                jobUrl: job.signal_url,
-                date: job.posted_date || new Date().toISOString(),
-                minimumSalary: undefined,
-                maximumSalary: undefined,
-                applications: 0,
-                expirationDate: '',
-                currency: 'GBP',
-              });
-            }
-          }
-
-          // Rate limit between searches
-          await new Promise(resolve => setTimeout(resolve, 200));
-        } catch (err) {
-          console.error(`[ICP Scan] Error searching for "${primaryTerm}" in ${location}:`, err);
         }
       }
+    } catch (err) {
+      console.error('[ICP Scan] Error in parallel search:', err);
+      stats.errors.push(`Parallel search error: ${err instanceof Error ? err.message : 'Unknown'}`);
     }
 
     console.log(`[ICP Scan] Found ${allReedJobs.length} unique jobs before filtering`);
@@ -609,17 +621,46 @@ export async function POST(
       console.log(`[ICP Scan] Contracts: ${stats.contracts_found} found, ${stats.contracts_matched} matched ICP criteria`);
     }
 
-    // Update profile last_synced_at
+    // Queue expansion tasks for background processing
+    // This will search additional role variations and expanded locations
+    const batchId = randomUUID();
+    const allRoleVariations = roles.flatMap(role => getRoleSearchTerms(role));
+    const remainingRoles = allRoleVariations.filter(r => !searchedRoles.includes(r));
+
+    if (remainingRoles.length > 0 || searchLocations.length < UK_NATIONAL_LOCATIONS.length) {
+      try {
+        const tasksQueued = await queueExpansionTasks(
+          adminClient,
+          id,
+          batchId,
+          remainingRoles,
+          searchedRoles,
+          locations,
+          searchLocations
+        );
+        stats.expansion_tasks_queued = tasksQueued;
+        console.log(`[ICP Scan] Queued ${tasksQueued} expansion tasks for background processing`);
+      } catch (err) {
+        console.error('[ICP Scan] Error queuing expansion tasks:', err);
+      }
+    }
+
+    // Update profile last_synced_at and scan_status
     await supabase
       .from('icp_profiles')
-      .update({ last_synced_at: new Date().toISOString() })
+      .update({
+        last_synced_at: new Date().toISOString(),
+        scan_status: stats.expansion_tasks_queued > 0 ? 'expanding' : 'completed',
+        scan_batch_id: stats.expansion_tasks_queued > 0 ? batchId : null,
+      })
       .eq('id', id);
 
-    console.log(`[ICP Scan] Complete. Jobs: ${stats.jobs_processed}, Contracts: ${stats.contracts_matched}, Signals: ${stats.signals_generated}`);
+    console.log(`[ICP Scan] Complete. Jobs: ${stats.jobs_processed}, Contracts: ${stats.contracts_matched}, Signals: ${stats.signals_generated}, Expansion: ${stats.expansion_tasks_queued} tasks`);
 
     return NextResponse.json({
       success: true,
       stats,
+      expandingInBackground: stats.expansion_tasks_queued > 0,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';

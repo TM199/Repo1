@@ -1,168 +1,167 @@
-# Signal Mentis Improvement Plan
+# Sprint 1: Create Labs Page
 
-Based on comprehensive business analysis. Focus: Make the product viable for sales teams.
+## Overview
+Create a standalone `/labs` page for experimental features outside the main dashboard.
 
-## Current State Summary
-- **Working**: Signal detection (Gov APIs + Firecrawl), Lead enrichment (LeadMagic + Prospeo), CSV export
-- **Fixed (Dec 2024)**: Search/filter on signals page, Domain extraction, Leadership detection
-- **Missing**: CRM integration, Activity tracking
+## Tasks
 
----
+- [x] 1. Create `/src/app/labs/layout.tsx` - minimal layout (header + footer, no sidebar)
+- [x] 2. Create `/src/app/labs/page.tsx` - page with 3 search cards
+- [x] 3. Create `/src/app/api/labs/companies-house/route.ts` - wraps existing lib
+- [x] 4. Create `/src/app/api/labs/planning/route.ts` - wraps existing lib
+- [x] 5. Create `/src/app/api/labs/tenders/route.ts` - wraps existing lib
+- [x] 6. Build passed
 
-## Signal Detection Engine v2 - Hard to Fill vs Stale Distinction - COMPLETED
+## Review
 
-### Goal
-Fix pain signal generation to distinguish between:
-- **Hard to Fill** (HIGH VALUE): Jobs open 90+ days AND still being actively refreshed
-- **Stale/Abandoned** (LOWER VALUE): Jobs open 90+ days but NOT seen recently
+**Files created:**
+- `src/app/labs/layout.tsx` - Simple layout with header (logo + Labs badge), footer disclaimer
+- `src/app/labs/page.tsx` - Client component with 3 search cards
+- `src/app/api/labs/companies-house/route.ts` - Wraps searchCompanies/getCompanyOfficers
+- `src/app/api/labs/planning/route.ts` - Wraps fetchPlanningApplications
+- `src/app/api/labs/tenders/route.ts` - Wraps fetchFTSAwards
 
-### Key Insight
-We already track `last_seen_at` in job_postings - we just need to USE it in signal generation.
+**Features:**
+- Companies House: Search by name, see company list with status
+- Planning Data: Fetch recent significant applications by days
+- Find a Tender: Fetch recent contract awards by days
 
-### Implementation Steps
-
-#### Phase 1: Core Signal Logic Fix (Critical)
-
-- [x] **1. Create signal detection library**
-  - File: `src/lib/signals/detection.ts`
-  - Add PAIN_SCORES config with hard_to_fill and stale variants
-  - Add REFRESH_THRESHOLD_DAYS constant (14 days)
-  - Signal types: hard_to_fill_30/60/90, stale_job_30/60/90
-
-- [x] **2. Fix generate-pain-signals cron**
-  - File: `src/app/api/cron/generate-pain-signals/route.ts`
-  - Import detection functions from @/lib/signals/detection
-  - Calculate `daysSinceRefresh` from `last_seen_at`
-  - Use determineJobSignalType() to get signal config
-  - Use generateSignalTitle() and generateSignalDetail() for signal text
-  - Track hard_to_fill_signals in stats
-  - Check for both stale and hard_to_fill variants when looking for existing signals
-  - Handle signal type transitions (stale->hard_to_fill)
-
-- [x] **3. Update ICP scan route**
-  - File: `src/app/api/icp/[id]/scan/route.ts`
-  - Apply same hard_to_fill vs stale logic
-  - Include `days_since_refresh` in signal detail
-
-- [x] **4. Add days_since_refresh column to pain signals**
-  - File: `scripts/migrate-signal-refresh-tracking.sql`
-  - Add column to track when signal was last refreshed
-
-#### Phase 2: UI Updates
-
-- [x] **5. Update CompaniesInPainDashboard**
-  - File: `src/components/dashboard/CompaniesInPainDashboard.tsx`
-  - Show "ACTIVE" badge for hard_to_fill signals
-  - Show "POSSIBLY STALE" badge for stale signals
-  - Display refresh context on cards
-  - Updated stats card to show "Actively Recruiting" count
-
-- [x] **6. Update signal explanations**
-  - File: `src/lib/signal-explanations.ts`
-  - Add explanations for new signal types (hard_to_fill_30/60/90)
-  - Update stale_job explanations to clarify they're potentially abandoned
-
-#### Phase 3: Optimise Enrichment
-
-- [x] **7. Create enrichment priority logic**
-  - File: `src/lib/signals/enrichment.ts` (new)
-  - Prioritise hard_to_fill signals for Firecrawl enrichment
-  - Skip stale signals to save API costs
-  - Sort companies by presence of hard_to_fill signals first
-
-- [x] **8. Enrichment cron ready**
-  - No existing enrichment cron to update
-  - New library ready to use when enrichment cron is created
-
-#### Phase 4: Testing & Verification
-
-- [x] **9. Build passes**
-  - All TypeScript compiles correctly
-  - No errors
-
-- [ ] **10. Database migration required**
-  - Run `scripts/migrate-signal-refresh-tracking.sql` in Supabase SQL Editor
-  - Adds `days_since_refresh` column to `company_pain_signals`
+**No changes to existing code** - just added new files
 
 ---
 
-## Previously Completed (Reference)
+# Sprint 2: Remove Low-Value Features
 
-### Phase 1: Critical Fixes (P0) - COMPLETED
-- [x] Search & Filter on Signals Page
-- [x] Domain extraction fix
-- [x] Leadership detection fix
+## Overview
+Remove Search Profiles, Agency Finder, and URL Sources from the app.
 
-### Phase 2: CRM Integration (P1) - COMPLETED
-- [x] HubSpot Integration
-- [x] Export Improvements
+## Tasks
 
-### Phase 3: Data Quality (P2) - COMPLETED
-- [x] Industry Detection
-- [x] Signal Confidence Scoring
-- [x] Enrichment Data Quality
+- [x] 1. Remove Search Profiles pages and API routes
+- [x] 2. Remove Agency Finder pages and API routes
+- [x] 3. Remove URL Sources pages and API routes
+- [x] 4. Update Sidebar navigation (removed Agency, added Labs)
+- [x] 5. Build passed and deployed
 
-### Phase 5: Agency Finder - COMPLETED
-- [x] Agency website analysis
-- [x] Signal search with SSE streaming
-- [x] Results with CSV export
+## Review
 
-### Signal Mentis v2.0 - ICP Architecture - COMPLETED
-- [x] ICP profile system
-- [x] Contract/Tender signal filtering
-- [x] Search profile to pain analysis
+**Files deleted (17 total):**
+- `src/app/(dashboard)/search/` - 6 files
+- `src/app/api/search/` - 6 files
+- `src/app/(dashboard)/agency/` - 2 files
+- `src/app/api/agency/` - 3 files
+- `src/app/(dashboard)/sources/` - 2 files
+- `src/app/api/sources/` - 3 files
+
+**Files modified:**
+- `src/components/dashboard/Sidebar.tsx` - Removed Agency Finder, added Labs link
+
+**Result:**
+- Routes reduced from 52 to 39 (-25%)
+- Sidebar simplified: 7 items (was 8)
+- Labs now accessible from main nav
 
 ---
 
-## Review - Signal Detection Engine v2 Complete
+# Sprint 3: Simplify Backend
 
-### Summary of Changes
+## Overview
+Remove Adzuna, Companies House, Planning Data from cron jobs. Consolidate cron schedules.
 
-**Core Problem Fixed:**
-The system was ignoring `last_seen_at` when generating pain signals, showing jobs as "stale" even when companies were actively refreshing them. Now we distinguish between:
-- **Hard to Fill** (high value): Old job + recently refreshed = confirmed active pain
-- **Stale** (lower value): Old job + not refreshed = possibly abandoned
+## Tasks
 
-### Files Created
-- `src/lib/signals/detection.ts` - Central config for pain scores and signal type determination
-- `src/lib/signals/enrichment.ts` - Enrichment priority logic (prioritize hard_to_fill)
-- `scripts/migrate-signal-refresh-tracking.sql` - Database migration for days_since_refresh column
+- [x] 1. Remove Adzuna lib and references from ingest-jobs cron
+- [x] 2. Remove Companies House from government cron
+- [x] 3. Remove Planning Data from government cron
+- [x] 4. Delete daily/weekly/monthly cron routes
+- [x] 5. Update vercel.json cron config
+- [x] 6. Build passed and deployed
 
-### Files Modified
-- `src/app/api/cron/generate-pain-signals/route.ts` - Uses new detection logic, tracks hard_to_fill vs stale
-- `src/app/api/icp/[id]/scan/route.ts` - Uses new detection logic for ICP scans
-- `src/components/dashboard/CompaniesInPainDashboard.tsx` - Shows ACTIVE/STALE badges, updated stats
-- `src/lib/signal-explanations.ts` - Added explanations for new signal types
+## Review
 
-### Key Implementation Details
+**Files deleted:**
+- `src/lib/adzuna.ts` - Adzuna API integration
+- `src/app/api/cron/daily/` - Unused daily cron
+- `src/app/api/cron/weekly/` - Unused weekly cron
+- `src/app/api/cron/monthly/` - Unused monthly cron
 
-**Pain Scores (from detection.ts):**
-| Signal Type | Pain Score | Urgency |
-|-------------|------------|---------|
-| hard_to_fill_90 | 35 | immediate |
-| hard_to_fill_60 | 20 | immediate |
-| hard_to_fill_30 | 8 | short_term |
-| stale_job_90 | 25 | immediate |
-| stale_job_60 | 15 | short_term |
-| stale_job_30 | 5 | medium_term |
+**Files modified:**
+- `src/app/api/cron/ingest-jobs/route.ts` - Removed all Adzuna references (now Reed-only)
+- `src/app/api/cron/government/route.ts` - Simplified to only Contracts Finder + Find a Tender
+- `vercel.json` - Removed daily/weekly cron entries
 
-**Refresh Threshold:** 14 days
-- Jobs seen within 14 days = "actively recruiting" = hard_to_fill
-- Jobs NOT seen in 14+ days = "possibly abandoned" = stale
+**Result:**
+- Routes: 39 → 36 (-8%)
+- Cron jobs: 7 → 5
+- Government sync now only fetches high-value data (contracts/tenders)
+- Job ingestion simplified to Reed-only
 
-**UI Updates:**
-- Green "ACTIVE" badge for hard_to_fill signals
-- Amber "POSSIBLY STALE" badge for stale signals
-- New "Actively Recruiting" stat in dashboard header
+---
 
-### Database Migration Required
-Run in Supabase SQL Editor:
-```sql
-ALTER TABLE company_pain_signals
-ADD COLUMN IF NOT EXISTS days_since_refresh INTEGER;
-```
+# Sprint 4: Smart Job Ingestion (Timeout Fix)
 
-### Build Status
-- Build successful
-- All TypeScript compiles
-- No errors
+## Overview
+Fix the `ingest-jobs` cron timeout by splitting job ingestion into 3 location groups.
+
+**Problem:** Processing 6,440+ jobs in one run = ~296s processing time → TIMEOUT at 300s
+
+**Solution:** Split into 3 location groups running on separate schedules.
+
+## Tasks
+
+- [x] 1. Add `LOCATION_GROUPS` constant to `ingest-jobs/route.ts`
+- [x] 2. Add `group` query parameter handling in GET handler
+- [x] 3. Filter ICP locations by group before Reed API call
+- [x] 4. Update `vercel.json` with 3 location-based cron entries
+- [x] 5. Build passed
+
+## Review
+
+**Files modified:**
+- `src/app/api/cron/ingest-jobs/route.ts` - Added location group support (~15 lines)
+- `vercel.json` - Updated cron config (1 entry → 3 entries)
+
+**Location Groups:**
+| Group | Locations | Est. Jobs | Schedule |
+|-------|-----------|-----------|----------|
+| `london` | London | ~5,000 | Every 4h |
+| `major` | Manchester, Birmingham, Leeds, Bristol | ~3,000 | Every 2h at :15 |
+| `regional` | Newcastle, Nottingham, Cardiff, Glasgow, Edinburgh, Liverpool, Sheffield | ~2,000 | Every 2h at :30 |
+
+**Daily Coverage:**
+- London: 6 runs/day
+- Major cities: 12 runs/day
+- Regional cities: 12 runs/day
+
+**What stayed unchanged:**
+- `rescan-icp-jobs` (3x daily) - already handles limited job counts
+- `process-scan-queue` (every 15min) - processes 2 tasks at a time
+- Initial ICP scan - on-demand, parallel searching
+- All job processing logic (fingerprinting, company matching, signals)
+
+**Additional change: Pain signal generation frequency**
+- Changed from once daily (6:30 AM) to every 2 hours at :45
+- Now signals are generated ~15 minutes after each ingestion group completes
+- Users see new companies in pain within 2 hours instead of next morning
+
+## Complete Cron Schedule
+
+| Time | Cron |
+|------|------|
+| :00 | `ingest-jobs?group=london` (every 4h) |
+| :15 | `ingest-jobs?group=major` (every 2h) |
+| :30 | `ingest-jobs?group=regional` (every 2h) |
+| :45 | `generate-pain-signals` (every 2h) |
+
+## Duplicate Handling
+
+When the same job is seen again:
+1. **Fingerprint match** → Update `last_seen_at`, don't create duplicate
+2. **Similar job at same company (inactive)** → Detect as repost, increment `repost_count`
+3. **New job** → Create new record with `original_posted_date`
+
+Pain signals use:
+- `original_posted_date` - when job first appeared
+- `last_seen_at` - when job was last seen (refreshed)
+- If job is old but recently refreshed → **"Hard to Fill"** (high pain)
+- If job is old and NOT refreshed → **"Stale"** (lower pain)
