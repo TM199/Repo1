@@ -58,6 +58,13 @@ export const PAIN_SCORES: Record<
 
   // COMPANIES HOUSE - Expansion signals
   capital_raise: { pain_score: 25, urgency: 'short_term', confidence_base: 75 },
+
+  // CONTRACTS FINDER - Contract award signals
+  contract_awarded_small: { pain_score: 20, urgency: 'short_term', confidence_base: 85 },      // £50k-£500k
+  contract_awarded_medium: { pain_score: 30, urgency: 'immediate', confidence_base: 90 },     // £500k-£2M
+  contract_awarded_large: { pain_score: 40, urgency: 'immediate', confidence_base: 95 },      // £2M+
+  contract_awarded_first: { pain_score: 30, urgency: 'short_term', confidence_base: 85 },     // First government contract
+  contract_awarded_multiple: { pain_score: 35, urgency: 'immediate', confidence_base: 90 },   // 2+ contracts in 30 days
 };
 
 /**

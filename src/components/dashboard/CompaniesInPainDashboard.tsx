@@ -28,6 +28,8 @@ import {
   DollarSign,
   MapPin,
   Zap,
+  FileText,
+  Award,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ICPProfile } from '@/types';
@@ -78,6 +80,7 @@ interface PainSignal {
   urgency: string;
   detected_at: string;
   source_job_posting_id: string | null;
+  source: string;
   job_url: string | null;
 }
 
@@ -112,6 +115,17 @@ const UK_REGIONS = [
   'Scotland',
   'Wales',
   'Northern Ireland',
+];
+
+// Signal source tabs
+type SignalTab = 'all' | 'job_board' | 'contracts_finder' | 'companies_house' | 'tenders';
+
+const SIGNAL_TABS: { id: SignalTab; label: string; icon: React.ReactNode; sources: string[] }[] = [
+  { id: 'all', label: 'All Signals', icon: <Briefcase className="h-4 w-4" />, sources: [] },
+  { id: 'job_board', label: 'Job Board', icon: <Flame className="h-4 w-4" />, sources: ['job_board'] },
+  { id: 'contracts_finder', label: 'Contracts', icon: <Award className="h-4 w-4" />, sources: ['contracts_finder'] },
+  { id: 'companies_house', label: 'Companies House', icon: <FileText className="h-4 w-4" />, sources: ['companies_house'] },
+  { id: 'tenders', label: 'Tenders', icon: <FileText className="h-4 w-4" />, sources: ['tenders'] },
 ];
 
 const isHardToFillSignal = (signalType: string) => signalType.startsWith('hard_to_fill');
@@ -166,6 +180,7 @@ export function CompaniesInPainDashboard() {
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; message: string } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [analyzingJobsForCompanyId, setAnalyzingJobsForCompanyId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<SignalTab>('all');
 
   // Find contacts for a company
   async function handleFindContacts(companyId: string, companyName: string) {
@@ -398,7 +413,7 @@ export function CompaniesInPainDashboard() {
 
   useEffect(() => {
     fetchCompaniesInPain();
-  }, [selectedIcpId, selectedIndustry, selectedRegion, minPainScore]);
+  }, [selectedIcpId, selectedIndustry, selectedRegion, minPainScore, activeTab]);
 
   async function fetchCompaniesInPain() {
     const supabase = createClient();
@@ -415,6 +430,7 @@ export function CompaniesInPainDashboard() {
           company_pain_signals!inner(
             id, pain_signal_type, signal_title, signal_detail,
             signal_value, days_since_refresh, urgency, detected_at, source_job_posting_id,
+            source,
             job_postings:source_job_posting_id(source_url)
           )
         `
@@ -436,6 +452,12 @@ export function CompaniesInPainDashboard() {
         if (selectedRegion !== 'all') {
           query = query.ilike('region', `%${selectedRegion}%`);
         }
+      }
+
+      // Apply signal source filter based on active tab
+      const activeTabConfig = SIGNAL_TABS.find(t => t.id === activeTab);
+      if (activeTabConfig && activeTabConfig.sources.length > 0) {
+        query = query.in('company_pain_signals.source', activeTabConfig.sources);
       }
 
       const { data, error } = await query;
@@ -464,6 +486,7 @@ export function CompaniesInPainDashboard() {
               urgency: string;
               detected_at: string;
               source_job_posting_id: string | null;
+              source: string;
               job_postings: { source_url: string } | null;
             }) => ({
               ...signal,
@@ -611,6 +634,24 @@ export function CompaniesInPainDashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Signal Type Tabs */}
+      <div className="flex gap-1 p-1 bg-[#F6F9FC] rounded-lg border border-[#E3E8EE]">
+        {SIGNAL_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              activeTab === tab.id
+                ? 'bg-white text-[#0A2540] shadow-sm'
+                : 'text-[#6B7C93] hover:text-[#0A2540]'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
       {/* Manual Filters (shown when no ICP selected) */}
       <div className="flex gap-4 flex-wrap">
@@ -990,7 +1031,7 @@ export function CompaniesInPainDashboard() {
                       </>
                     )}
                   </Button>
-                  {company.domain && (
+                  {company.domain && !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(company.domain) && (
                     <Button
                       variant="outline"
                       size="sm"

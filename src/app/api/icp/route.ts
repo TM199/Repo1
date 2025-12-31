@@ -91,5 +91,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Trigger contracts cron if contracts_awarded is enabled (async, don't block response)
+  if (profile.signal_types?.includes('contracts_awarded')) {
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+    fetch(`${baseUrl}/api/cron/contracts-finder-signals`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+      },
+    }).catch(err => {
+      console.error('[ICP API] Failed to trigger contracts cron:', err);
+    });
+
+    console.log('[ICP API] Triggered contracts-finder-signals cron for new ICP');
+  }
+
   return NextResponse.json({ profile: data }, { status: 201 });
 }

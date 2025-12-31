@@ -5,6 +5,8 @@
  * API Documentation: https://www.contractsfinder.service.gov.uk/apidocumentation
  *
  * This is a FREE government API - no API key required.
+ *
+ * Updated for Sprint 2: Added enhanced search, CPV extraction, and pagination.
  */
 
 import { createAdminClient } from './supabase/server';
@@ -12,7 +14,21 @@ import { extractDomainFromOCDSParty } from './domain-resolver';
 
 const BASE_URL = 'https://www.contractsfinder.service.gov.uk/Published';
 
-interface OCDSRelease {
+// Rate limiting
+const RATE_LIMIT_MS = 500;
+let lastRequestTime = 0;
+
+async function rateLimitedFetch(url: string, options?: RequestInit): Promise<Response> {
+  const now = Date.now();
+  const timeSinceLastRequest = now - lastRequestTime;
+  if (timeSinceLastRequest < RATE_LIMIT_MS) {
+    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_MS - timeSinceLastRequest));
+  }
+  lastRequestTime = Date.now();
+  return fetch(url, options);
+}
+
+export interface OCDSRelease {
   ocid: string;
   id: string;
   date: string;
@@ -49,6 +65,8 @@ interface OCDSRelease {
     value?: { amount: number; currency: string };
     procurementMethod?: string;
     mainProcurementCategory?: string;
+    classification?: { scheme: string; id: string; description: string };
+    additionalClassifications?: Array<{ scheme: string; id: string; description: string }>;
     items?: Array<{
       id: string;
       description: string;
@@ -279,4 +297,260 @@ export async function syncContractAwards(daysBack: number = 1): Promise<{
 
   console.log(`[Contracts Finder] Inserted ${newSignals.length} new signals`);
   return { success: true, found: signals.length, new: newSignals.length };
+}
+
+// ============================================
+// ENHANCED API (Sprint 2)
+// ============================================
+
+export interface SearchParams {
+  publishedFrom?: string;  // YYYY-MM-DD
+  publishedTo?: string;    // YYYY-MM-DD
+  minValue?: number;
+  maxValue?: number;
+  cpvCodes?: string[];     // Filter by CPV code prefixes
+  size?: number;           // Page size (default 100)
+  maxPages?: number;       // Max pages to fetch (default 5)
+}
+
+export interface ParsedContractAward {
+  ocid: string;
+  title: string;
+  description: string;
+  value_gbp: number | null;
+  award_date: string;
+  contract_start_date: string | null;
+  contract_end_date: string | null;
+  buyer_name: string;
+  buyer_id: string | null;
+  cpv_codes: string[];
+  supplier: {
+    name: string;
+    party_id: string | null;
+    location: string | null;
+    domain: string | null;
+  };
+  source_url: string;
+  raw_data: OCDSRelease;
+}
+
+/**
+ * Extract CPV codes from an OCDS release
+ * CPV codes can be in tender.classification, tender.additionalClassifications, or tender.items
+ */
+export function extractCPVCodes(release: OCDSRelease): string[] {
+  const cpvCodes: string[] = [];
+
+  // Extract from tender main classification
+  if (release.tender?.classification?.scheme === 'CPV' && release.tender.classification.id) {
+    cpvCodes.push(release.tender.classification.id);
+  }
+
+  // Extract from tender additional classifications
+  if (release.tender?.additionalClassifications) {
+    for (const classification of release.tender.additionalClassifications) {
+      if (classification.scheme === 'CPV' && classification.id) {
+        cpvCodes.push(classification.id);
+      }
+    }
+  }
+
+  // Extract from tender items (fallback)
+  if (release.tender?.items) {
+    for (const item of release.tender.items) {
+      if (item.classification?.scheme === 'CPV' && item.classification.id) {
+        cpvCodes.push(item.classification.id);
+      }
+    }
+  }
+
+  return [...new Set(cpvCodes)];
+}
+
+/**
+ * Get supplier party details from an OCDS release
+ */
+function getSupplierParty(release: OCDSRelease, supplierName: string) {
+  return release.parties?.find(
+    p => p.roles.includes('supplier') && p.name === supplierName
+  );
+}
+
+/**
+ * Parse an OCDS release into structured contract award data
+ */
+export function parseContractAward(release: OCDSRelease): ParsedContractAward[] {
+  const awards: ParsedContractAward[] = [];
+
+  if (!release.awards || release.awards.length === 0) {
+    return awards;
+  }
+
+  const buyerParty = release.parties?.find(p => p.roles.includes('buyer'));
+  const buyerName = release.buyer?.name || buyerParty?.name || 'Unknown Buyer';
+  const buyerId = release.buyer?.id || buyerParty?.id || null;
+  const cpvCodes = extractCPVCodes(release);
+
+  for (const award of release.awards) {
+    if (award.status !== 'active' || !award.suppliers) continue;
+
+    for (const supplier of award.suppliers) {
+      const supplierParty = getSupplierParty(release, supplier.name);
+      const supplierLocation = supplierParty?.address?.locality ||
+        supplierParty?.address?.region || null;
+      const supplierDomain = supplierParty ?
+        extractDomainFromOCDSParty(supplierParty) || null : null;
+
+      awards.push({
+        ocid: release.ocid,
+        title: release.tender?.title || award.title || 'Contract Award',
+        description: release.tender?.description || award.description || '',
+        value_gbp: award.value?.amount || release.tender?.value?.amount || null,
+        award_date: award.date,
+        contract_start_date: award.contractPeriod?.startDate || null,
+        contract_end_date: award.contractPeriod?.endDate || null,
+        buyer_name: buyerName,
+        buyer_id: buyerId,
+        cpv_codes: cpvCodes,
+        supplier: {
+          name: supplier.name,
+          party_id: supplier.id || null,
+          location: supplierLocation,
+          domain: supplierDomain,
+        },
+        source_url: `https://www.contractsfinder.service.gov.uk/Notice/${release.ocid}`,
+        raw_data: release,
+      });
+    }
+  }
+
+  return awards;
+}
+
+/**
+ * Search for awarded contracts with filtering and pagination
+ *
+ * @param params - Search parameters
+ * @returns Array of parsed contract awards
+ */
+export async function searchAwardedContracts(params: SearchParams = {}): Promise<{
+  awards: ParsedContractAward[];
+  totalFound: number;
+  pagesProcessed: number;
+  error?: string;
+}> {
+  const {
+    publishedFrom,
+    publishedTo,
+    minValue,
+    cpvCodes,
+    size = 100,
+    maxPages = 5,
+  } = params;
+
+  const allAwards: ParsedContractAward[] = [];
+  let pagesProcessed = 0;
+  let nextUrl: string | null = null;
+
+  try {
+    // Build initial URL
+    const queryParams = new URLSearchParams();
+    queryParams.set('stages', 'award');
+    queryParams.set('size', size.toString());
+
+    if (publishedFrom) queryParams.set('publishedFrom', publishedFrom);
+    if (publishedTo) queryParams.set('publishedTo', publishedTo);
+
+    let url = `${BASE_URL}/Notices/OCDS/Search?${queryParams.toString()}`;
+
+    while (url && pagesProcessed < maxPages) {
+      console.log(`[Contracts Finder] Fetching page ${pagesProcessed + 1}...`);
+
+      const response = await rateLimitedFetch(url, {
+        headers: { 'Accept': 'application/json' },
+      });
+
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}: ${response.statusText}`);
+      }
+
+      const data: OCDSSearchResponse = await response.json();
+      pagesProcessed++;
+
+      for (const release of data.releases || []) {
+        const awards = parseContractAward(release);
+
+        for (const award of awards) {
+          // Filter by minimum value
+          if (minValue && (!award.value_gbp || award.value_gbp < minValue)) {
+            continue;
+          }
+
+          // Filter by CPV codes (if specified)
+          if (cpvCodes && cpvCodes.length > 0) {
+            const hasMatchingCPV = award.cpv_codes.some(code =>
+              cpvCodes.some(prefix => code.startsWith(prefix))
+            );
+            if (!hasMatchingCPV && award.cpv_codes.length > 0) {
+              continue;
+            }
+          }
+
+          allAwards.push(award);
+        }
+      }
+
+      // Get next page URL
+      nextUrl = data.links?.next || null;
+      url = nextUrl || '';
+    }
+
+    console.log(`[Contracts Finder] Found ${allAwards.length} matching awards across ${pagesProcessed} pages`);
+
+    return {
+      awards: allAwards,
+      totalFound: allAwards.length,
+      pagesProcessed,
+    };
+  } catch (error) {
+    console.error('[Contracts Finder] Error:', error);
+    return {
+      awards: allAwards,
+      totalFound: allAwards.length,
+      pagesProcessed,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
+}
+
+/**
+ * Get a single contract notice by OCID
+ */
+export async function getContractNotice(ocid: string): Promise<{
+  release: OCDSRelease | null;
+  error?: string;
+}> {
+  try {
+    const url = `${BASE_URL}/Notices/OCDS/${ocid}`;
+
+    const response = await rateLimitedFetch(url, {
+      headers: { 'Accept': 'application/json' },
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return { release: null };
+      }
+      throw new Error(`API returned ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return { release: data };
+  } catch (error) {
+    console.error('[Contracts Finder] Error fetching notice:', error);
+    return {
+      release: null,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 }

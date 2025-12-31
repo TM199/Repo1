@@ -73,7 +73,18 @@ async function lookupViaGoogleSearch(companyName: string): Promise<DomainResolut
 
     for (const match of matches) {
       const domain = match.replace(/^(?:https?:\/\/)?(?:www\.)?/i, '').toLowerCase();
-      if (!excludedDomains.some(ex => domain.includes(ex))) {
+
+      // Skip if it's an IP address
+      if (isIPAddress(domain)) continue;
+
+      // Skip if domain doesn't contain letters (IPs and garbage data)
+      if (!/[a-z]/i.test(domain)) continue;
+
+      // Skip excluded domains
+      if (excludedDomains.some(ex => domain.includes(ex))) continue;
+
+      // Validate it looks like a real domain
+      if (isLikelyValidDomain(domain)) {
         return {
           domain,
           source: 'google_search',
@@ -151,10 +162,35 @@ async function guessAndValidate(companyName: string): Promise<DomainResolutionRe
 }
 
 /**
+ * Check if a string is an IP address
+ */
+export function isIPAddress(str: string): boolean {
+  // IPv4 pattern
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+  if (ipv4Pattern.test(str)) {
+    // Validate each octet is 0-255
+    const octets = str.split('.');
+    return octets.every(o => {
+      const num = parseInt(o, 10);
+      return num >= 0 && num <= 255;
+    });
+  }
+  return false;
+}
+
+/**
  * Validate if a domain likely exists (basic check)
+ * Rejects IP addresses - we only want actual domain names
  */
 function isLikelyValidDomain(domain: string): boolean {
   if (!domain || !domain.includes('.') || domain.length < 4) return false;
+
+  // Reject IP addresses - we want actual domains, not IPs
+  if (isIPAddress(domain)) return false;
+
+  // Domain must contain at least one letter (IPs are all digits + dots)
+  if (!/[a-z]/i.test(domain)) return false;
+
   const domainPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
   return domainPattern.test(domain);
 }
@@ -168,15 +204,24 @@ export async function resolveDomain(
     contactUrl?: string;
     skipLookup?: boolean;
     skipGoogle?: boolean;
+    skipCache?: boolean;
   }
 ): Promise<DomainResolutionResult> {
   const cleanedName = cleanCompanyName(companyName);
   const cacheKey = cleanedName.toLowerCase();
 
-  // Check cache first
-  const cached = domainCache.get(cacheKey);
-  if (cached) {
-    return cached;
+  // Check cache first (unless skipped)
+  if (!options?.skipCache) {
+    const cached = domainCache.get(cacheKey);
+    if (cached) {
+      // Validate cached domain isn't an IP (legacy data cleanup)
+      if (!cached.domain || !isIPAddress(cached.domain)) {
+        return cached;
+      }
+      // Clear invalid cache entry containing IP
+      console.log(`[Domain Resolver] Clearing cached IP for: ${companyName}`);
+      domainCache.delete(cacheKey);
+    }
   }
 
   // Strategy 1: If contact URL provided, extract domain (100% confidence)

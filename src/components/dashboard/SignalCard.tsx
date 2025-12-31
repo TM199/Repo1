@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Signal, SignalContact } from '@/types';
-import { ExternalLink, Clock, UserPlus, Mail, Phone, Linkedin, Loader2, Check, X, RefreshCw, AlertCircle, ShieldCheck, Upload } from 'lucide-react';
+import { ExternalLink, Clock, UserPlus, Mail, Phone, Linkedin, Loader2, Check, X, RefreshCw, AlertCircle, ShieldCheck, Upload, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 import { calculateConfidenceScore, getConfidenceLabelColor } from '@/lib/signal-scoring';
 
@@ -62,9 +62,22 @@ const emailStatusColors: Record<string, { bg: string; text: string; icon: React.
   unknown: { bg: '#F0F3F7', text: '#6B7C93', icon: null },
 };
 
+// Check if a string is an IP address (not a valid domain for display)
+function isIPAddress(str: string | null | undefined): boolean {
+  if (!str) return false;
+  return /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(str);
+}
+
+// Get displayable domain (null if IP or empty)
+function getDisplayDomain(domain: string | null | undefined): string | null {
+  if (!domain || isIPAddress(domain)) return null;
+  return domain;
+}
+
 export function SignalCard({ signal }: SignalCardProps) {
   const style = signalTypeStyles[signal.signal_type] || { bg: '#F0F3F7', text: '#425466' };
   const [enriching, setEnriching] = useState(false);
+  const displayDomain = getDisplayDomain(signal.company_domain);
   const [contacts, setContacts] = useState<SignalContact[]>(signal.contacts || []);
   const [enrichmentSteps, setEnrichmentSteps] = useState<EnrichmentStep[]>([]);
   const [enrichmentPhase, setEnrichmentPhase] = useState<string>('');
@@ -239,9 +252,23 @@ export function SignalCard({ signal }: SignalCardProps) {
                 </span>
               )}
             </div>
-            <h3 className="font-semibold text-[#0A2540] text-sm mb-0.5 truncate">
-              {signal.company_name || 'Unknown Company'}
-            </h3>
+            <div className="flex items-center gap-2 mb-0.5">
+              <h3 className="font-semibold text-[#0A2540] text-sm truncate">
+                {signal.company_name || 'Unknown Company'}
+              </h3>
+              {displayDomain && (
+                <a
+                  href={`https://${displayDomain}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-[10px] text-[#6B7C93] hover:text-[#635BFF] transition-colors shrink-0"
+                  title={`Visit ${displayDomain}`}
+                >
+                  <Globe className="h-3 w-3" />
+                  <span className="hidden sm:inline">{displayDomain}</span>
+                </a>
+              )}
+            </div>
             <p className="text-sm text-[#425466] truncate mb-1">
               {signal.signal_title}
             </p>

@@ -79,6 +79,24 @@ export async function PUT(
     return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
   }
 
+  // Trigger contracts cron if contracts_awarded was just enabled (async, don't block response)
+  if (body.signal_types?.includes('contracts_awarded')) {
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+    fetch(`${baseUrl}/api/cron/contracts-finder-signals`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+      },
+    }).catch(err => {
+      console.error('[ICP API] Failed to trigger contracts cron:', err);
+    });
+
+    console.log('[ICP API] Triggered contracts-finder-signals cron for updated ICP');
+  }
+
   return NextResponse.json({ profile });
 }
 
