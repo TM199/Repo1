@@ -178,18 +178,50 @@ export function isIPAddress(str: string): boolean {
   return false;
 }
 
+// Valid TLDs for domain validation
+const VALID_TLDS = new Set([
+  'com', 'co.uk', 'org', 'net', 'io', 'uk', 'gov.uk', 'org.uk', 'me.uk', 'ltd.uk',
+  'eu', 'de', 'fr', 'es', 'it', 'nl', 'be', 'ch', 'at', 'pl', 'se', 'no', 'dk', 'fi',
+  'ie', 'pt', 'cz', 'hu', 'ro', 'bg', 'gr', 'sk', 'hr', 'si', 'lt', 'lv', 'ee',
+  'us', 'ca', 'au', 'nz', 'jp', 'cn', 'in', 'br', 'mx', 'za', 'ae', 'sg', 'hk',
+  'info', 'biz', 'co', 'tech', 'app', 'dev', 'ai', 'cloud', 'digital', 'online',
+  'solutions', 'services', 'consulting', 'group', 'global', 'international',
+  'agency', 'studio', 'design', 'media', 'marketing', 'health', 'care', 'ltd'
+]);
+
 /**
  * Validate if a domain likely exists (basic check)
- * Rejects IP addresses - we only want actual domain names
+ * Rejects IP addresses, file extensions, and invalid TLDs
  */
 function isLikelyValidDomain(domain: string): boolean {
   if (!domain || !domain.includes('.') || domain.length < 4) return false;
 
-  // Reject IP addresses - we want actual domains, not IPs
+  // Reject IP addresses
   if (isIPAddress(domain)) return false;
 
-  // Domain must contain at least one letter (IPs are all digits + dots)
+  // Domain must contain at least one letter
   if (!/[a-z]/i.test(domain)) return false;
+
+  // Reject file extensions (common image/document types)
+  const fileExtensions = /\.(png|jpg|jpeg|gif|svg|webp|pdf|doc|docx|xls|xlsx|ppt|pptx|zip|rar|txt|html|css|js)$/i;
+  if (fileExtensions.test(domain)) return false;
+
+  // Reject domains with too many segments (likely garbage data)
+  const segments = domain.split('.');
+  if (segments.length > 4) return false;
+
+  // Reject if any segment is too long (real domains rarely exceed 20 chars per segment)
+  if (segments.some(s => s.length > 25)) return false;
+
+  // Extract TLD (last segment or last two segments for country codes)
+  const tld = segments.length >= 2 && segments[segments.length - 2].length <= 3
+    ? `${segments[segments.length - 2]}.${segments[segments.length - 1]}`  // e.g., co.uk
+    : segments[segments.length - 1];  // e.g., com
+
+  // Validate TLD
+  if (!VALID_TLDS.has(tld.toLowerCase()) && !VALID_TLDS.has(segments[segments.length - 1].toLowerCase())) {
+    return false;
+  }
 
   const domainPattern = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i;
   return domainPattern.test(domain);
