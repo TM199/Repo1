@@ -36,6 +36,48 @@ async function getLeadershipICPs(supabase: ReturnType<typeof createAdminClient>)
   return profiles.filter((p: ICPProfile) => p.signal_types.includes('leadership'));
 }
 
+/**
+ * Check if a company's location matches an ICP's target locations
+ */
+function matchesICPLocation(companyRegion: string | null, icp: ICPProfile): boolean {
+  // If ICP has no location filter, match all
+  if (!icp.locations || icp.locations.length === 0) return true;
+
+  // If company has no region, don't match (unless ICP has no filter)
+  if (!companyRegion) return false;
+
+  const regionLower = companyRegion.toLowerCase();
+  return icp.locations.some(loc => regionLower.includes(loc.toLowerCase()));
+}
+
+/**
+ * Check if a company's industry matches an ICP's target industries
+ */
+function matchesICPIndustry(companyIndustry: string | null, icp: ICPProfile): boolean {
+  // If ICP has no industry filter, match all
+  if (!icp.industries || icp.industries.length === 0) return true;
+
+  // If company has no industry, don't match (unless ICP has no filter)
+  if (!companyIndustry) return false;
+
+  const industryLower = companyIndustry.toLowerCase();
+  return icp.industries.some(ind => industryLower.includes(ind.toLowerCase()));
+}
+
+/**
+ * Get ICPs that match a company's location and industry
+ */
+function getMatchingICPs(
+  companyRegion: string | null,
+  companyIndustry: string | null,
+  icpProfiles: ICPProfile[]
+): ICPProfile[] {
+  return icpProfiles.filter(icp =>
+    matchesICPLocation(companyRegion, icp) &&
+    matchesICPIndustry(companyIndustry, icp)
+  );
+}
+
 export async function GET(request: NextRequest) {
   // Verify authorization
   if (!verifyCronSecret(request)) {
@@ -85,10 +127,11 @@ export async function GET(request: NextRequest) {
 
     // ==========================================
     // STEP 1: Get companies with CH numbers (oldest checked first)
+    // Include region and industry for ICP matching
     // ==========================================
     const { data: companies, error: companyError } = await supabase
       .from('companies')
-      .select('id, name, companies_house_number, companies_house_last_checked')
+      .select('id, name, companies_house_number, companies_house_last_checked, region, industry')
       .not('companies_house_number', 'is', null)
       .order('companies_house_last_checked', { ascending: true, nullsFirst: true })
       .limit(100);
@@ -112,10 +155,30 @@ export async function GET(request: NextRequest) {
 
     // ==========================================
     // STEP 2: Process each company for signals
+    // Only create signals for ICPs that match the company's location/industry
     // ==========================================
     for (const company of companies) {
       try {
+        // Find ICPs that match this company's location and industry
+        const matchingICPs = getMatchingICPs(
+          company.region,
+          company.industry,
+          leadershipICPs
+        );
+
+        // Skip companies that don't match any ICP criteria
+        if (matchingICPs.length === 0) {
+          console.log(`[ch-signals] Skipping ${company.name} - no matching ICPs`);
+          // Still update last checked to avoid re-checking
+          await supabase
+            .from('companies')
+            .update({ companies_house_last_checked: new Date().toISOString() })
+            .eq('id', company.id);
+          continue;
+        }
+
         stats.companies_checked++;
+        console.log(`[ch-signals] Processing ${company.name} for ${matchingICPs.length} matching ICP(s)`);
 
         // Detect all CH signals
         const signals = await detectAllCHSignals(
@@ -124,9 +187,9 @@ export async function GET(request: NextRequest) {
           { leadershipLookbackDays: 90, expansionLookbackDays: 180 }
         );
 
-        // Process each signal
+        // Process each signal - only for matching ICPs
         for (const signal of signals) {
-          await processSignal(supabase, signal, leadershipICPs, stats);
+          await processSignal(supabase, signal, matchingICPs, stats);
         }
 
         // Update last checked timestamp
