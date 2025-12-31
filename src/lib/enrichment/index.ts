@@ -161,7 +161,7 @@ export async function enrichWithWaterfall(
   onProgress?.({ type: 'roles', roles: rolesToSearch });
 
   let resolvedDomain = existingDomain || '';
-  let domainSource: WaterfallResult['domainSource'] = existingDomain ? 'clearbit' : 'none';
+  let domainSource: WaterfallResult['domainSource'] = existingDomain ? 'url_extract' : 'none';
   let domainConfidence = existingDomain ? 100 : 0;
 
   // Track which strategy succeeded
@@ -178,24 +178,13 @@ export async function enrichWithWaterfall(
     });
   }
 
-  // Strategy 2-4: Domain resolution fallbacks
+  // Strategy 2-3: Domain resolution fallbacks
   if (!existingDomain) {
-    strategies.push({
-      name: 'clearbit',
-      getDomain: async () => {
-        const result = await resolveDomain(companyName, { skipGoogle: true, skipLookup: false });
-        if (result.domain && result.source === 'clearbit') {
-          return { domain: result.domain, source: result.source, confidence: result.confidence };
-        }
-        return null;
-      },
-    });
     strategies.push({
       name: 'google_search',
       getDomain: async () => {
-        const result = await resolveDomain(companyName, { skipGoogle: false, skipLookup: true });
-        // This will only use Google since we skip lookup
-        if (result.domain) {
+        const result = await resolveDomain(companyName, { skipGoogle: false });
+        if (result.domain && result.source === 'google_search') {
           return { domain: result.domain, source: result.source, confidence: result.confidence };
         }
         return null;
@@ -204,7 +193,8 @@ export async function enrichWithWaterfall(
     strategies.push({
       name: 'guessed',
       getDomain: async () => {
-        const result = await resolveDomain(companyName, { skipGoogle: true, skipLookup: true });
+        const result = await resolveDomain(companyName, { skipGoogle: true });
+        // This will use DNS guessing since we skip Google
         if (result.domain && result.source === 'guessed') {
           return { domain: result.domain, source: result.source, confidence: result.confidence };
         }

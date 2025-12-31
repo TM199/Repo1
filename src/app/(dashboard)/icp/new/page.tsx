@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, X, Plus, Info, CheckCircle2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Loader2, X, Plus, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { ICPSignalType, PullFrequency, EmploymentType } from '@/types';
 import { INDUSTRIES, ROLE_CATEGORIES, RoleCategory } from '@/lib/signal-mapping';
 
@@ -89,7 +89,6 @@ export default function NewICPProfilePage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [scanStats, setScanStats] = useState<{ jobs: number; contracts: number; signals: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Form state
@@ -306,22 +305,13 @@ export default function NewICPProfilePage() {
       setIsSubmitting(false);
       setIsScanning(true);
 
-      const scanResponse = await fetch(`/api/icp/${profileId}/scan`, {
-        method: 'POST',
-      });
+      // Trigger scan in background (don't wait for completion)
+      fetch(`/api/icp/${profileId}/scan`, { method: 'POST' })
+        .catch(err => console.error('Scan trigger error:', err));
 
-      const scanData = await scanResponse.json();
-
-      if (scanData.success && scanData.stats) {
-        setScanStats({
-          jobs: scanData.stats.jobs_processed || 0,
-          contracts: scanData.stats.contracts_matched || 0,
-          signals: scanData.stats.signals_generated || 0,
-        });
-      }
-
+      // Redirect immediately to ICP detail page to show live progress
       setTimeout(() => {
-        router.push('/pain');
+        router.push(`/icp/${profileId}`);
       }, 1500);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create profile');
@@ -335,49 +325,17 @@ export default function NewICPProfilePage() {
       <div className="max-w-xl mx-auto mt-20">
         <Card className="bg-white border-[#E3E8EE]">
           <CardContent className="py-12 text-center">
-            {!scanStats ? (
-              <>
-                <Loader2 className="h-12 w-12 text-[#635BFF] mx-auto mb-4 animate-spin" />
-                <h2 className="text-xl font-bold text-[#0A2540] mb-2">
-                  Scanning for Pain Signals
-                </h2>
-                <p className="text-sm text-[#6B7C93] mb-4">
-                  Searching for companies matching your ICP...
-                </p>
-                <div className="flex justify-center gap-2 text-xs text-[#6B7C93]">
-                  <Badge variant="outline">{locations.length} locations</Badge>
-                  <Badge variant="outline">{specificRoles.length} roles</Badge>
-                </div>
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-4" />
-                <h2 className="text-xl font-bold text-[#0A2540] mb-2">
-                  Scan Complete!
-                </h2>
-                <div className="flex justify-center gap-6 mb-4">
-                  {scanStats.jobs > 0 && (
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-[#0A2540]">{scanStats.jobs}</p>
-                      <p className="text-xs text-[#6B7C93]">Jobs Analyzed</p>
-                    </div>
-                  )}
-                  {scanStats.contracts > 0 && (
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-[#0A2540]">{scanStats.contracts}</p>
-                      <p className="text-xs text-[#6B7C93]">Contracts Found</p>
-                    </div>
-                  )}
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-[#635BFF]">{scanStats.signals}</p>
-                    <p className="text-xs text-[#6B7C93]">Pain Signals</p>
-                  </div>
-                </div>
-                <p className="text-sm text-[#6B7C93]">
-                  Redirecting to Companies in Pain...
-                </p>
-              </>
-            )}
+            <Loader2 className="h-12 w-12 text-[#635BFF] mx-auto mb-4 animate-spin" />
+            <h2 className="text-xl font-bold text-[#0A2540] mb-2">
+              Starting Scan
+            </h2>
+            <p className="text-sm text-[#6B7C93] mb-4">
+              Taking you to your profile to see live results...
+            </p>
+            <div className="flex justify-center gap-2 text-xs text-[#6B7C93]">
+              <Badge variant="outline">{locations.length} locations</Badge>
+              <Badge variant="outline">{specificRoles.length} roles</Badge>
+            </div>
           </CardContent>
         </Card>
       </div>

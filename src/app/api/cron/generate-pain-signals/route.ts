@@ -19,6 +19,7 @@ import {
   generateSignalDetail,
 } from '@/lib/signals/detection';
 import { ICPProfile } from '@/types';
+import { notifyICPOwner } from '@/lib/email';
 
 export const maxDuration = 300;
 
@@ -599,6 +600,26 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('[generate-pain-signals] Pain signal generation complete');
+
+    // ==========================================
+    // STEP 8: Send email notifications to ICP owners
+    // ==========================================
+    const totalNewSignals = stats.hard_to_fill_signals + stats.stale_signals +
+      stats.repost_signals + stats.salary_increase_signals +
+      stats.referral_bonus_signals + stats.contract_signals;
+
+    if (totalNewSignals > 0) {
+      console.log(`[generate-pain-signals] Sending notifications for ${totalNewSignals} new signals...`);
+
+      // Notify each ICP owner who got new signals
+      for (const icp of jobPainICPs) {
+        try {
+          await notifyICPOwner(icp.id, totalNewSignals);
+        } catch (emailErr) {
+          console.error(`[generate-pain-signals] Email failed for ICP ${icp.id}:`, emailErr);
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,

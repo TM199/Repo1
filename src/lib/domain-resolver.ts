@@ -2,21 +2,19 @@
  * Domain Resolver Utility
  *
  * Attempts to find real company domains using multiple strategies:
- * 1. Clearbit Autocomplete API (free, high accuracy)
- * 2. Companies House lookup
- * 3. Google search extraction via Firecrawl
- * 4. DNS validation for guesses
+ * 1. Extract from URL (if contactUrl provided) - 100% confidence
+ * 2. Google search extraction via Firecrawl - 60% confidence
+ * 3. DNS validation for guesses - 40% confidence
+ *
+ * Note: Clearbit was removed (acquired by HubSpot, free tier unreliable)
  */
-
-const COMPANIES_HOUSE_BASE = 'https://api.company-information.service.gov.uk';
-const CLEARBIT_AUTOCOMPLETE = 'https://autocomplete.clearbit.com/v1/companies/suggest';
 
 // Cache for domain lookups to avoid repeated API calls
 const domainCache = new Map<string, DomainResolutionResult>();
 
 export interface DomainResolutionResult {
   domain: string;
-  source: 'clearbit' | 'companies_house' | 'google_search' | 'guessed' | 'none';
+  source: 'url_extract' | 'google_search' | 'guessed' | 'none';
   confidence: number; // 0-100
 }
 
@@ -32,104 +30,7 @@ function cleanCompanyName(name: string): string {
 }
 
 /**
- * Get auth header for Companies House API
- */
-function getAuthHeader(): Record<string, string> | null {
-  const apiKey = process.env.COMPANIES_HOUSE_API_KEY;
-  if (!apiKey) return null;
-
-  const credentials = Buffer.from(`${apiKey}:`).toString('base64');
-  return {
-    'Authorization': `Basic ${credentials}`,
-    'Accept': 'application/json',
-  };
-}
-
-/**
- * Strategy 1: Use Clearbit's free autocomplete API
- * This is the most reliable method - high accuracy, free, no API key needed
- */
-async function lookupViaClearbit(companyName: string): Promise<DomainResolutionResult | null> {
-  try {
-    const cleanedName = cleanCompanyName(companyName);
-    const url = `${CLEARBIT_AUTOCOMPLETE}?query=${encodeURIComponent(cleanedName)}`;
-
-    const response = await fetch(url, {
-      headers: { 'Accept': 'application/json' }
-    });
-
-    if (!response.ok) return null;
-
-    const suggestions = await response.json();
-
-    if (!suggestions || suggestions.length === 0) return null;
-
-    // Find best match by comparing names
-    const exactMatch = suggestions.find((s: { name: string; domain: string }) =>
-      cleanCompanyName(s.name) === cleanedName
-    );
-
-    const bestMatch = exactMatch || suggestions[0];
-
-    if (bestMatch?.domain) {
-      return {
-        domain: bestMatch.domain,
-        source: 'clearbit',
-        confidence: exactMatch ? 95 : 75
-      };
-    }
-
-    return null;
-  } catch (error) {
-    console.error('[Domain Resolver] Clearbit lookup error:', error);
-    return null;
-  }
-}
-
-/**
- * Strategy 2: Search Companies House for website in filing data
- */
-async function lookupViaCompaniesHouse(companyName: string): Promise<DomainResolutionResult | null> {
-  const headers = getAuthHeader();
-  if (!headers) return null;
-
-  try {
-    // Search for company
-    const searchUrl = `${COMPANIES_HOUSE_BASE}/search/companies?q=${encodeURIComponent(companyName)}&items_per_page=5`;
-    const searchResponse = await fetch(searchUrl, { headers });
-
-    if (!searchResponse.ok) return null;
-
-    const searchData = await searchResponse.json();
-    const companies = searchData.items || [];
-
-    if (companies.length === 0) return null;
-
-    // Find best match
-    const cleanedInput = cleanCompanyName(companyName);
-    const bestMatch = companies.find((c: { company_name: string }) =>
-      cleanCompanyName(c.company_name) === cleanedInput
-    ) || companies[0];
-
-    // Get company details
-    const companyNumber = bestMatch.company_number;
-    const detailsUrl = `${COMPANIES_HOUSE_BASE}/company/${companyNumber}`;
-    const detailsResponse = await fetch(detailsUrl, { headers });
-
-    if (!detailsResponse.ok) return null;
-
-    // Companies House doesn't return website directly
-    // But we got the company number which confirms the company exists
-    // Use this for Google search fallback
-    return null;
-  } catch (error) {
-    console.error('[Domain Resolver] Companies House lookup error:', error);
-    return null;
-  }
-}
-
-/**
- * Strategy 3: Use Firecrawl to search Google for company website
+ * Strategy 1: Use Firecrawl to search Google for company website
  */
 async function lookupViaGoogleSearch(companyName: string): Promise<DomainResolutionResult | null> {
   const firecrawlKey = process.env.FIRECRAWL_API_KEY;
@@ -189,7 +90,7 @@ async function lookupViaGoogleSearch(companyName: string): Promise<DomainResolut
 }
 
 /**
- * Strategy 4: Intelligent guessing with DNS validation
+ * Strategy 2: Intelligent guessing with DNS validation
  */
 async function guessAndValidate(companyName: string): Promise<DomainResolutionResult | null> {
   const cleanedName = cleanCompanyName(companyName);
@@ -278,13 +179,13 @@ export async function resolveDomain(
     return cached;
   }
 
-  // If contact URL provided, extract domain
+  // Strategy 1: If contact URL provided, extract domain (100% confidence)
   if (options?.contactUrl) {
     try {
       const url = new URL(options.contactUrl);
       const domain = url.hostname.replace(/^www\./, '');
       if (isLikelyValidDomain(domain)) {
-        const result: DomainResolutionResult = { domain, source: 'clearbit', confidence: 100 };
+        const result: DomainResolutionResult = { domain, source: 'url_extract', confidence: 100 };
         domainCache.set(cacheKey, result);
         return result;
       }
@@ -294,23 +195,7 @@ export async function resolveDomain(
   }
 
   if (!options?.skipLookup) {
-    // Strategy 1: Clearbit (free, most reliable)
-    console.log(`[Domain Resolver] Trying Clearbit for: ${companyName}`);
-    const clearbitResult = await lookupViaClearbit(companyName);
-    if (clearbitResult) {
-      domainCache.set(cacheKey, clearbitResult);
-      return clearbitResult;
-    }
-
-    // Strategy 2: Companies House (UK companies)
-    console.log(`[Domain Resolver] Trying Companies House for: ${companyName}`);
-    const chResult = await lookupViaCompaniesHouse(companyName);
-    if (chResult) {
-      domainCache.set(cacheKey, chResult);
-      return chResult;
-    }
-
-    // Strategy 3: Google Search via Firecrawl (if not skipped)
+    // Strategy 2: Google Search via Firecrawl (60% confidence)
     if (!options?.skipGoogle) {
       console.log(`[Domain Resolver] Trying Google search for: ${companyName}`);
       const googleResult = await lookupViaGoogleSearch(companyName);
@@ -320,7 +205,7 @@ export async function resolveDomain(
       }
     }
 
-    // Strategy 4: Intelligent guessing with validation
+    // Strategy 3: Intelligent guessing with DNS validation (40% confidence)
     console.log(`[Domain Resolver] Trying DNS validation for: ${companyName}`);
     const guessResult = await guessAndValidate(companyName);
     if (guessResult) {

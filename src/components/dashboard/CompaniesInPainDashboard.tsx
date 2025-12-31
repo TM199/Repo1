@@ -426,16 +426,8 @@ export function CompaniesInPainDashboard() {
 
       // Apply ICP filtering if an ICP is selected
       if (selectedIcp) {
-        // Filter by ICP industries
-        if (selectedIcp.industries.length > 0) {
-          query = query.in('industry', selectedIcp.industries);
-        }
-        // Filter by ICP locations (using region field with partial match)
-        if (selectedIcp.locations.length > 0) {
-          // Build OR condition for location matching
-          const locationFilters = selectedIcp.locations.map(loc => `region.ilike.%${loc}%`).join(',');
-          query = query.or(locationFilters);
-        }
+        // Filter by signals linked to this ICP profile
+        query = query.eq('company_pain_signals.icp_profile_id', selectedIcp.id);
       } else {
         // Use manual filters when no ICP selected
         if (selectedIndustry !== 'all') {

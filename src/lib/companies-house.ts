@@ -263,7 +263,7 @@ export async function getCompanyOfficers(companyNumber: string): Promise<{
 /**
  * Get filing history for a company to detect recent officer changes
  */
-async function getFilingHistory(companyNumber: string, category?: string): Promise<{
+export async function getFilingHistory(companyNumber: string, category?: string): Promise<{
   filings: Array<{
     category: string;
     type: string;

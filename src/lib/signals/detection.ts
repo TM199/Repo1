@@ -50,6 +50,14 @@ export const PAIN_SCORES: Record<
 
   // Multiple roles
   multiple_open_roles: { pain_score: 10, urgency: 'short_term', confidence_base: 70 },
+
+  // COMPANIES HOUSE - Leadership signals
+  new_director_appointment: { pain_score: 25, urgency: 'immediate', confidence_base: 85 },
+  leadership_reorganisation: { pain_score: 30, urgency: 'immediate', confidence_base: 80 },
+  director_gap: { pain_score: 20, urgency: 'short_term', confidence_base: 70 },
+
+  // COMPANIES HOUSE - Expansion signals
+  capital_raise: { pain_score: 25, urgency: 'short_term', confidence_base: 75 },
 };
 
 /**

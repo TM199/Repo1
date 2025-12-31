@@ -1,13 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { ArrowLeft, Briefcase, MapPin, Zap, Clock, Trash2, Play, Loader2, CheckCircle, AlertCircle, Building, Users } from 'lucide-react';
+import { ArrowLeft, Briefcase, MapPin, Zap, Clock, Trash2, Play, Loader2, CheckCircle, AlertCircle, Building, Users, Search, Sparkles } from 'lucide-react';
 import { ICPProfile, ICPSignalType, ScanProgress } from '@/types';
 
 const SIGNAL_TYPE_LABELS: Record<ICPSignalType, string> = {
@@ -30,6 +30,8 @@ export function ICPProfileDetail({ profile: initialProfile }: Props) {
   const [isToggling, setIsToggling] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [showSuccessBanner, setShowSuccessBanner] = useState(false);
+  const prevScanStatus = useRef(initialProfile.scan_status);
 
   // Poll for scan progress when status is 'scanning' or 'expanding'
   useEffect(() => {
@@ -53,10 +55,29 @@ export function ICPProfileDetail({ profile: initialProfile }: Props) {
       } catch (error) {
         console.error('Error polling scan status:', error);
       }
-    }, 5000); // Poll every 5 seconds
+    }, 3000); // Poll every 3 seconds for faster updates
 
     return () => clearInterval(pollInterval);
   }, [profile.id, profile.scan_status]);
+
+  // Show success banner and auto-navigate when scan completes with signals
+  useEffect(() => {
+    const wasScanning = prevScanStatus.current === 'scanning' || prevScanStatus.current === 'expanding';
+    const isNowComplete = profile.scan_status === 'completed';
+    const progress = profile.scan_progress as ScanProgress | undefined;
+    const hasSignals = progress && progress.signals_generated > 0;
+
+    if (wasScanning && isNowComplete && hasSignals) {
+      setShowSuccessBanner(true);
+      // Auto-navigate to pain page after 4 seconds
+      const timer = setTimeout(() => {
+        router.push(`/pain?icp=${profile.id}`);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+
+    prevScanStatus.current = profile.scan_status;
+  }, [profile.scan_status, profile.scan_progress, profile.id, router]);
 
   const handleToggleActive = async () => {
     setIsToggling(true);
@@ -256,56 +277,130 @@ export function ICPProfileDetail({ profile: initialProfile }: Props) {
         </Card>
       )}
 
-      {/* Scan Progress */}
-      {(profile.scan_status === 'scanning' || profile.scan_status === 'expanding' || profile.scan_status === 'completed') && scanProgress && (
-        <Card className="bg-white border-[#E3E8EE]">
+      {/* Success Banner with Auto-Navigate */}
+      {showSuccessBanner && (
+        <Card className="bg-gradient-to-r from-green-50 to-emerald-50 border-green-200 overflow-hidden">
+          <CardContent className="py-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                  <Sparkles className="h-6 w-6 text-green-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-green-900">
+                    {scanProgress?.signals_generated || 0} Companies in Pain Found!
+                  </h3>
+                  <p className="text-sm text-green-700">
+                    Taking you to your results...
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={() => router.push(`/pain?icp=${profile.id}`)}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <Building className="h-4 w-4 mr-2" />
+                  View Now
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowSuccessBanner(false)}
+                  className="border-green-300 text-green-700 hover:bg-green-100"
+                >
+                  Stay Here
+                </Button>
+              </div>
+            </div>
+            {/* Progress bar */}
+            <div className="mt-4 h-1 bg-green-200 rounded-full overflow-hidden">
+              <div className="h-full bg-green-500 animate-[progress_4s_linear]" style={{ width: '100%' }} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Scan Progress - Show during any scan state */}
+      {(profile.scan_status === 'scanning' || profile.scan_status === 'expanding' || profile.scan_status === 'completed') && (
+        <Card className={`border-[#E3E8EE] ${profile.scan_status === 'scanning' ? 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200' : 'bg-white'}`}>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2 text-[#0A2540]">
               {profile.scan_status === 'completed' ? (
                 <CheckCircle className="h-4 w-4 text-green-600" />
+              ) : profile.scan_status === 'scanning' ? (
+                <Search className="h-4 w-4 animate-pulse text-blue-600" />
               ) : (
                 <Loader2 className="h-4 w-4 animate-spin text-[#635BFF]" />
               )}
-              Scan Progress
+              {profile.scan_status === 'scanning' ? 'Searching Job Boards...' :
+               profile.scan_status === 'expanding' ? 'Expanding Results...' : 'Scan Results'}
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center p-3 bg-[#F6F9FC] rounded-lg">
-                <div className="text-2xl font-bold text-[#0A2540]">{scanProgress.jobs_found}</div>
-                <div className="text-xs text-[#6B7C93]">Jobs Found</div>
-              </div>
-              <div className="text-center p-3 bg-[#F6F9FC] rounded-lg">
-                <div className="text-2xl font-bold text-[#0A2540]">{scanProgress.companies_found}</div>
-                <div className="text-xs text-[#6B7C93]">Companies</div>
-              </div>
-              <div className="text-center p-3 bg-[#F6F9FC] rounded-lg">
-                <div className="text-2xl font-bold text-[#0A2540]">{scanProgress.signals_generated}</div>
-                <div className="text-xs text-[#6B7C93]">Signals</div>
-              </div>
-              {profile.scan_status === 'expanding' && (
-                <div className="text-center p-3 bg-[#F6F9FC] rounded-lg">
-                  <div className="text-2xl font-bold text-[#0A2540]">
-                    {scanProgress.tasks_completed}/{scanProgress.tasks_completed + scanProgress.tasks_pending}
-                  </div>
-                  <div className="text-xs text-[#6B7C93]">Tasks</div>
+            {profile.scan_status === 'scanning' && !scanProgress?.jobs_found ? (
+              /* Show searching animation when no results yet */
+              <div className="text-center py-6">
+                <div className="inline-flex items-center gap-3 px-4 py-2 bg-white rounded-full shadow-sm mb-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                  <span className="text-sm text-[#0A2540]">Searching {profile.locations.length} locations for {profile.specific_roles.length} roles...</span>
                 </div>
-              )}
-            </div>
-            {profile.scan_status === 'expanding' && (
-              <p className="text-xs text-[#6B7C93] mt-3 text-center">
-                Background expansion in progress. Results are being added automatically.
-              </p>
-            )}
-            {profile.scan_status === 'completed' && (
-              <div className="flex justify-center mt-4">
-                <Link href={`/pain?icp=${profile.id}`}>
-                  <Button variant="outline" className="text-[#635BFF] border-[#635BFF]">
-                    <Building className="h-4 w-4 mr-2" />
-                    View Companies in Pain
-                  </Button>
-                </Link>
+                <div className="flex justify-center gap-2">
+                  {profile.locations.slice(0, 4).map((loc) => (
+                    <Badge key={loc} variant="outline" className="bg-white/50 text-xs">
+                      {loc}
+                    </Badge>
+                  ))}
+                  {profile.locations.length > 4 && (
+                    <Badge variant="outline" className="bg-white/50 text-xs">
+                      +{profile.locations.length - 4} more
+                    </Badge>
+                  )}
+                </div>
               </div>
+            ) : (
+              /* Show stats when we have results */
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center p-3 bg-[#F6F9FC] rounded-lg">
+                    <div className="text-2xl font-bold text-[#0A2540]">{scanProgress?.jobs_found || 0}</div>
+                    <div className="text-xs text-[#6B7C93]">Jobs Found</div>
+                  </div>
+                  <div className="text-center p-3 bg-[#F6F9FC] rounded-lg">
+                    <div className="text-2xl font-bold text-[#0A2540]">{scanProgress?.companies_found || 0}</div>
+                    <div className="text-xs text-[#6B7C93]">Companies</div>
+                  </div>
+                  <div className="text-center p-3 bg-[#F6F9FC] rounded-lg">
+                    <div className="text-2xl font-bold text-[#635BFF]">{scanProgress?.signals_generated || 0}</div>
+                    <div className="text-xs text-[#6B7C93]">Pain Signals</div>
+                  </div>
+                  {profile.scan_status === 'expanding' && (
+                    <div className="text-center p-3 bg-[#F6F9FC] rounded-lg">
+                      <div className="text-2xl font-bold text-[#0A2540]">
+                        {(scanProgress?.tasks_completed || 0)}/{(scanProgress?.tasks_completed || 0) + (scanProgress?.tasks_pending || 0)}
+                      </div>
+                      <div className="text-xs text-[#6B7C93]">Tasks</div>
+                    </div>
+                  )}
+                </div>
+                {profile.scan_status === 'expanding' && (
+                  <div className="mt-4 p-3 bg-amber-50 rounded-lg border border-amber-100">
+                    <div className="flex items-center gap-2 text-amber-800 text-sm">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Background expansion in progress. New results are being added automatically.</span>
+                    </div>
+                  </div>
+                )}
+                {profile.scan_status === 'completed' && !showSuccessBanner && (
+                  <div className="flex justify-center mt-4">
+                    <Link href={`/pain?icp=${profile.id}`}>
+                      <Button className="bg-[#635BFF] hover:bg-[#5851DF] text-white">
+                        <Building className="h-4 w-4 mr-2" />
+                        View Companies in Pain
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>

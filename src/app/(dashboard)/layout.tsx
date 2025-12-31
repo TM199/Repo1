@@ -1,5 +1,6 @@
 import { Navbar } from '@/components/dashboard/Navbar';
 import { Sidebar } from '@/components/dashboard/Sidebar';
+import { WelcomeEmailTrigger } from '@/components/dashboard/WelcomeEmailTrigger';
 
 export default function DashboardLayout({
   children,
@@ -8,6 +9,7 @@ export default function DashboardLayout({
 }) {
   return (
     <div className="min-h-screen bg-[#F6F9FC]">
+      <WelcomeEmailTrigger />
       <Navbar />
       <div className="flex">
         <Sidebar />

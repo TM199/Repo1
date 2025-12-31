@@ -9,6 +9,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { ScanQueueTask, ScanQueueTaskType, ScanProgress } from '@/types';
 import { getRemainingCalls } from '@/lib/rate-limiter';
+import { notifyICPOwner } from '@/lib/email';
 
 // UK cities for expanded location searches (beyond user's ICP locations)
 const UK_EXPANSION_LOCATIONS = [
@@ -259,9 +260,13 @@ export async function updateScanProgress(
     last_updated: new Date().toISOString(),
   };
 
+  // INCREMENT numeric values instead of replacing them
   const newProgress: ScanProgress = {
-    ...currentProgress,
-    ...updates,
+    jobs_found: currentProgress.jobs_found + (updates.jobs_found || 0),
+    companies_found: currentProgress.companies_found + (updates.companies_found || 0),
+    signals_generated: currentProgress.signals_generated + (updates.signals_generated || 0),
+    tasks_pending: updates.tasks_pending ?? currentProgress.tasks_pending,
+    tasks_completed: updates.tasks_completed ?? currentProgress.tasks_completed,
     last_updated: new Date().toISOString(),
   };
 
@@ -297,6 +302,14 @@ export async function checkAndFinalizeExpansion(
         last_synced_at: new Date().toISOString(),
       })
       .eq('id', icpProfileId);
+
+    // Send email notification now that expansion is complete
+    try {
+      await notifyICPOwner(icpProfileId);
+      console.log(`[ScanQueue] Email notification sent for ICP ${icpProfileId}`);
+    } catch (emailErr) {
+      console.error(`[ScanQueue] Email notification failed for ICP ${icpProfileId}:`, emailErr);
+    }
 
     return true;
   }

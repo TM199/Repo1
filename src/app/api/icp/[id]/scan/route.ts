@@ -5,6 +5,9 @@
  * Called after profile creation to populate initial data.
  */
 
+// Vercel Pro: Allow up to 300 seconds for scan operations
+export const maxDuration = 300;
+
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/server';
@@ -38,6 +41,7 @@ import {
   generateSignalDetail
 } from '@/lib/signals/detection';
 import { queueExpansionTasks } from '@/lib/scan-queue';
+import { notifyICPOwner } from '@/lib/email';
 import { randomUUID } from 'crypto';
 
 // Industry detection from job titles
@@ -381,6 +385,7 @@ export async function POST(
 
             await adminClient.from('company_pain_signals').insert({
               company_id: company.id,
+              icp_profile_id: id, // Link signal to ICP profile
               pain_signal_type: signalType,
               source_job_posting_id: newJob.id,
               signal_title: generateSignalTitle(reedJob.jobTitle, daysOpen, isHardToFill),
@@ -418,6 +423,7 @@ export async function POST(
 
             await adminClient.from('company_pain_signals').insert({
               company_id: company.id,
+              icp_profile_id: id, // Link signal to ICP profile
               pain_signal_type: signalType,
               source_job_posting_id: newJob.id,
               signal_title: `${reedJob.jobTitle} - Reposted ${repostCount}x`,
@@ -436,6 +442,7 @@ export async function POST(
 
             await adminClient.from('company_pain_signals').insert({
               company_id: company.id,
+              icp_profile_id: id, // Link signal to ICP profile
               pain_signal_type: signalType,
               source_job_posting_id: newJob.id,
               signal_title: `${reedJob.jobTitle} - Salary increased ${Math.round(salaryIncrease)}%`,
@@ -453,6 +460,7 @@ export async function POST(
 
             await adminClient.from('company_pain_signals').insert({
               company_id: company.id,
+              icp_profile_id: id, // Link signal to ICP profile
               pain_signal_type: 'high_referral_bonus',
               source_job_posting_id: newJob.id,
               signal_title: `${reedJob.jobTitle} - Referral bonus ${bonusText}`,
@@ -645,17 +653,35 @@ export async function POST(
       }
     }
 
-    // Update profile last_synced_at and scan_status
+    // Update profile last_synced_at, scan_status, and scan_progress
     await supabase
       .from('icp_profiles')
       .update({
         last_synced_at: new Date().toISOString(),
         scan_status: stats.expansion_tasks_queued > 0 ? 'expanding' : 'completed',
         scan_batch_id: stats.expansion_tasks_queued > 0 ? batchId : null,
+        scan_progress: {
+          jobs_found: stats.jobs_processed,
+          companies_found: stats.companies_created,
+          signals_generated: stats.signals_generated,
+          tasks_pending: stats.expansion_tasks_queued,
+          tasks_completed: 0,
+          last_updated: new Date().toISOString(),
+        },
       })
       .eq('id', id);
 
     console.log(`[ICP Scan] Complete. Jobs: ${stats.jobs_processed}, Contracts: ${stats.contracts_matched}, Signals: ${stats.signals_generated}, Expansion: ${stats.expansion_tasks_queued} tasks`);
+
+    // Send email notification if signals were generated
+    if (stats.signals_generated > 0) {
+      try {
+        await notifyICPOwner(id, stats.signals_generated);
+        console.log(`[ICP Scan] Email notification sent for ${stats.signals_generated} signals`);
+      } catch (emailErr) {
+        console.error('[ICP Scan] Failed to send email notification:', emailErr);
+      }
+    }
 
     return NextResponse.json({
       success: true,

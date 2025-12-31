@@ -1,167 +1,146 @@
-# Sprint 1: Create Labs Page
+# Sprint 5: Companies House Signal Integration
 
-## Overview
-Create a standalone `/labs` page for experimental features outside the main dashboard.
-
-## Tasks
-
-- [x] 1. Create `/src/app/labs/layout.tsx` - minimal layout (header + footer, no sidebar)
-- [x] 2. Create `/src/app/labs/page.tsx` - page with 3 search cards
-- [x] 3. Create `/src/app/api/labs/companies-house/route.ts` - wraps existing lib
-- [x] 4. Create `/src/app/api/labs/planning/route.ts` - wraps existing lib
-- [x] 5. Create `/src/app/api/labs/tenders/route.ts` - wraps existing lib
-- [x] 6. Build passed
+## Status: COMPLETE
 
 ## Review
 
-**Files created:**
-- `src/app/labs/layout.tsx` - Simple layout with header (logo + Labs badge), footer disclaimer
-- `src/app/labs/page.tsx` - Client component with 3 search cards
-- `src/app/api/labs/companies-house/route.ts` - Wraps searchCompanies/getCompanyOfficers
-- `src/app/api/labs/planning/route.ts` - Wraps fetchPlanningApplications
-- `src/app/api/labs/tenders/route.ts` - Wraps fetchFTSAwards
+### Summary of Changes
+All Companies House signal integration tasks completed successfully:
 
-**Features:**
-- Companies House: Search by name, see company list with status
-- Planning Data: Fetch recent significant applications by days
-- Find a Tender: Fetch recent contract awards by days
+1. **Migration SQL** - Created `scripts/migrate-ch-filings.sql` with:
+   - `companies_house_filings` table for tracking processed filings
+   - New columns on `companies`: `companies_house_last_checked`, `sic_codes`, `company_status`, `incorporation_date`
+   - New columns on `company_pain_signals`: `confidence`, `source`, `source_filing_id`, `metadata`
 
-**No changes to existing code** - just added new files
+2. **Domain Resolver** - Removed Clearbit (dead service), simplified to:
+   - URL extraction (100% confidence)
+   - Google search via Firecrawl (60% confidence)
+   - DNS guessing with validation (40% confidence)
+
+3. **Pain Scores** - Added 4 CH signal types to `detection.ts`:
+   - `new_director_appointment` (25 pts)
+   - `leadership_reorganisation` (30 pts)
+   - `director_gap` (20 pts)
+   - `capital_raise` (25 pts)
+
+4. **Signal Detection** - Created `src/lib/companies-house/signals.ts`:
+   - `detectLeadershipSignals()` - AP01/TM01 filings
+   - `detectExpansionSignals()` - SH01/CC01 filings
+
+5. **Company Sync** - Created `src/lib/companies-house/company-sync.ts`:
+   - `syncCompanyFromCH()` - fetch CH → match/create company → resolve domain
+
+6. **Cron Job** - Created `/api/cron/companies-house-signals`:
+   - Processes companies with CH numbers (100/run)
+   - 600ms rate limiting between API calls
+   - Inserts to `company_pain_signals` table
+
+7. **Schedule** - Added to `vercel.json`: runs 5:30am daily
+
+### Files Changed
+| File | Action |
+|------|--------|
+| `scripts/migrate-ch-filings.sql` | Created |
+| `src/lib/domain-resolver.ts` | Modified (removed Clearbit) |
+| `src/lib/signals/detection.ts` | Modified (added CH signals) |
+| `src/lib/companies-house.ts` | Modified (exported getFilingHistory) |
+| `src/lib/companies-house/signals.ts` | Created |
+| `src/lib/companies-house/company-sync.ts` | Created |
+| `src/app/api/cron/companies-house-signals/route.ts` | Created |
+| `vercel.json` | Modified (added cron) |
+| `src/lib/enrichment/index.ts` | Fixed (removed clearbit references) |
+
+### Next Steps
+1. Run `scripts/migrate-ch-filings.sql` in Supabase
+2. Deploy to Vercel
+3. Test by triggering `/api/cron/companies-house-signals` manually
 
 ---
 
-# Sprint 2: Remove Low-Value Features
+## Implementation Tasks
 
-## Overview
-Remove Search Profiles, Agency Finder, and URL Sources from the app.
+### Phase 1: Database & Configuration
+- [x] **A. Create migration SQL** (`scripts/migrate-ch-filings.sql`)
+  - Create `companies_house_filings` table
+  - Add columns to `companies`: `companies_house_last_checked`, `sic_codes`, `company_status`, `incorporation_date`
+  - Add columns to `company_pain_signals`: `confidence`, `source`, `source_filing_id`, `metadata`
 
-## Tasks
+- [x] **B. Remove Clearbit from domain resolver** (`src/lib/domain-resolver.ts`)
+  - Remove `lookupViaClearbit()` function (Clearbit acquired by HubSpot - dead)
+  - Keep: URL extraction (100%), DNS guessing (40%), Firecrawl Google search (60%)
 
-- [x] 1. Remove Search Profiles pages and API routes
-- [x] 2. Remove Agency Finder pages and API routes
-- [x] 3. Remove URL Sources pages and API routes
-- [x] 4. Update Sidebar navigation (removed Agency, added Labs)
-- [x] 5. Build passed and deployed
+- [x] **C. Add CH pain scores** (`src/lib/signals/detection.ts`)
+  - `new_director_appointment`: 25 points, immediate, 85% confidence
+  - `leadership_reorganisation`: 30 points, immediate, 80% confidence
+  - `director_gap`: 20 points, short_term, 70% confidence
+  - `capital_raise`: 25 points, short_term, 75% confidence
 
-## Review
+- [x] **D. Export getFilingHistory** (`src/lib/companies-house.ts`)
+  - Change line 266 from `async function` to `export async function`
 
-**Files deleted (17 total):**
-- `src/app/(dashboard)/search/` - 6 files
-- `src/app/api/search/` - 6 files
-- `src/app/(dashboard)/agency/` - 2 files
-- `src/app/api/agency/` - 3 files
-- `src/app/(dashboard)/sources/` - 2 files
-- `src/app/api/sources/` - 3 files
+### Phase 2: Signal Detection
+- [x] **E. Create signal detection** (`src/lib/companies-house/signals.ts`)
+  - `detectLeadershipSignals(companyId, chNumber, lookbackDays)` - AP01, TM01 filings
+  - `detectExpansionSignals(companyId, chNumber, lookbackDays)` - SH01, CC01 filings
+  - Export `SignalCandidate` type
 
-**Files modified:**
-- `src/components/dashboard/Sidebar.tsx` - Removed Agency Finder, added Labs link
+- [x] **F. Create company sync** (`src/lib/companies-house/company-sync.ts`)
+  - `syncCompanyFromCH(chNumber)` - fetch CH details → findOrCreateCompany → resolveDomain
+  - Updates CH-specific fields (sic_codes, status, incorporation_date)
 
-**Result:**
-- Routes reduced from 52 to 39 (-25%)
-- Sidebar simplified: 7 items (was 8)
-- Labs now accessible from main nav
+### Phase 3: Cron Job
+- [x] **G. Create cron job** (`src/app/api/cron/companies-house-signals/route.ts`)
+  - Verify CRON_SECRET
+  - Get ICPs with 'leadership' signal type
+  - Process companies with `companies_house_number` (limit 100)
+  - Detect signals → insert to `company_pain_signals` (NOT legacy `signals` table)
+  - Rate limit: 600ms between CH API calls
+  - Recalculate company pain scores
 
----
+- [x] **H. Update vercel.json**
+  - Add cron schedule: `"30 5 * * *"` (5:30am daily, after government cron)
 
-# Sprint 3: Simplify Backend
-
-## Overview
-Remove Adzuna, Companies House, Planning Data from cron jobs. Consolidate cron schedules.
-
-## Tasks
-
-- [x] 1. Remove Adzuna lib and references from ingest-jobs cron
-- [x] 2. Remove Companies House from government cron
-- [x] 3. Remove Planning Data from government cron
-- [x] 4. Delete daily/weekly/monthly cron routes
-- [x] 5. Update vercel.json cron config
-- [x] 6. Build passed and deployed
-
-## Review
-
-**Files deleted:**
-- `src/lib/adzuna.ts` - Adzuna API integration
-- `src/app/api/cron/daily/` - Unused daily cron
-- `src/app/api/cron/weekly/` - Unused weekly cron
-- `src/app/api/cron/monthly/` - Unused monthly cron
-
-**Files modified:**
-- `src/app/api/cron/ingest-jobs/route.ts` - Removed all Adzuna references (now Reed-only)
-- `src/app/api/cron/government/route.ts` - Simplified to only Contracts Finder + Find a Tender
-- `vercel.json` - Removed daily/weekly cron entries
-
-**Result:**
-- Routes: 39 → 36 (-8%)
-- Cron jobs: 7 → 5
-- Government sync now only fetches high-value data (contracts/tenders)
-- Job ingestion simplified to Reed-only
+### Phase 4: Testing
+- [ ] **I. End-to-end test** (Manual)
+  - CH filing → signal → company with domain → enrichable
+  - Verify signals appear with `source='companies_house'`
 
 ---
 
-# Sprint 4: Smart Job Ingestion (Timeout Fix)
+## Files to Modify
 
-## Overview
-Fix the `ingest-jobs` cron timeout by splitting job ingestion into 3 location groups.
+| File | Change |
+|------|--------|
+| `scripts/migrate-ch-filings.sql` | CREATE - Migration SQL |
+| `src/lib/domain-resolver.ts` | MODIFY - Remove Clearbit |
+| `src/lib/signals/detection.ts` | MODIFY - Add CH pain scores |
+| `src/lib/companies-house.ts` | MODIFY - Export getFilingHistory |
+| `src/lib/companies-house/signals.ts` | CREATE - Signal detection |
+| `src/lib/companies-house/company-sync.ts` | CREATE - Company sync |
+| `src/app/api/cron/companies-house-signals/route.ts` | CREATE - Cron job |
+| `vercel.json` | MODIFY - Add cron schedule |
 
-**Problem:** Processing 6,440+ jobs in one run = ~296s processing time → TIMEOUT at 300s
+---
 
-**Solution:** Split into 3 location groups running on separate schedules.
+## Key Decisions
 
-## Tasks
+1. **Remove Clearbit** - Service acquired by HubSpot, no longer reliable free tier
+2. **Use `company_pain_signals` table** - NOT the legacy `signals` table
+3. **Rate limit** - 600ms between CH API calls (600 req/5min limit)
+4. **Process limit** - 100 companies per cron run to stay within timeout
 
-- [x] 1. Add `LOCATION_GROUPS` constant to `ingest-jobs/route.ts`
-- [x] 2. Add `group` query parameter handling in GET handler
-- [x] 3. Filter ICP locations by group before Reed API call
-- [x] 4. Update `vercel.json` with 3 location-based cron entries
-- [x] 5. Build passed
+---
 
-## Review
+## Previous Sprints (Reference)
 
-**Files modified:**
-- `src/app/api/cron/ingest-jobs/route.ts` - Added location group support (~15 lines)
-- `vercel.json` - Updated cron config (1 entry → 3 entries)
+### Sprint 4: Smart Job Ingestion (Completed)
+Fixed timeout by splitting job ingestion into 3 location groups.
 
-**Location Groups:**
-| Group | Locations | Est. Jobs | Schedule |
-|-------|-----------|-----------|----------|
-| `london` | London | ~5,000 | Every 4h |
-| `major` | Manchester, Birmingham, Leeds, Bristol | ~3,000 | Every 2h at :15 |
-| `regional` | Newcastle, Nottingham, Cardiff, Glasgow, Edinburgh, Liverpool, Sheffield | ~2,000 | Every 2h at :30 |
+### Sprint 3: Simplify Backend (Completed)
+Removed Adzuna, Companies House from government cron.
 
-**Daily Coverage:**
-- London: 6 runs/day
-- Major cities: 12 runs/day
-- Regional cities: 12 runs/day
+### Sprint 2: Remove Low-Value Features (Completed)
+Removed Search Profiles, Agency Finder, URL Sources.
 
-**What stayed unchanged:**
-- `rescan-icp-jobs` (3x daily) - already handles limited job counts
-- `process-scan-queue` (every 15min) - processes 2 tasks at a time
-- Initial ICP scan - on-demand, parallel searching
-- All job processing logic (fingerprinting, company matching, signals)
-
-**Additional change: Pain signal generation frequency**
-- Changed from once daily (6:30 AM) to every 2 hours at :45
-- Now signals are generated ~15 minutes after each ingestion group completes
-- Users see new companies in pain within 2 hours instead of next morning
-
-## Complete Cron Schedule
-
-| Time | Cron |
-|------|------|
-| :00 | `ingest-jobs?group=london` (every 4h) |
-| :15 | `ingest-jobs?group=major` (every 2h) |
-| :30 | `ingest-jobs?group=regional` (every 2h) |
-| :45 | `generate-pain-signals` (every 2h) |
-
-## Duplicate Handling
-
-When the same job is seen again:
-1. **Fingerprint match** → Update `last_seen_at`, don't create duplicate
-2. **Similar job at same company (inactive)** → Detect as repost, increment `repost_count`
-3. **New job** → Create new record with `original_posted_date`
-
-Pain signals use:
-- `original_posted_date` - when job first appeared
-- `last_seen_at` - when job was last seen (refreshed)
-- If job is old but recently refreshed → **"Hard to Fill"** (high pain)
-- If job is old and NOT refreshed → **"Stale"** (lower pain)
+### Sprint 1: Create Labs Page (Completed)
+Created `/labs` page with Companies House, Planning, Tenders search.

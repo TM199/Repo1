@@ -80,8 +80,8 @@ export async function GET() {
   try {
     console.log('[ProcessQueue] Starting queue processing...');
 
-    // Get next pending tasks (limit to 2 per run to stay within budget)
-    const tasks = await getNextQueueTasks(supabase, 2);
+    // Get next pending tasks (increased to 10 per run for faster processing)
+    const tasks = await getNextQueueTasks(supabase, 10);
 
     if (tasks.length === 0) {
       console.log('[ProcessQueue] No pending tasks');
