@@ -12,10 +12,16 @@ export const maxDuration = 300; // 5 minutes (Vercel Pro)
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import {
-  searchReedMultipleLocations,
+  searchReedMultipleKeywords,
   isRecruitmentAgency,
 } from '@/lib/job-boards';
-import { findOrCreateCompany } from '@/lib/companies/company-matcher';
+import {
+  searchAdzunaMultipleKeywords,
+  mapAdzunaCategoryToIndustry,
+  parseAdzunaDate,
+  type AdzunaJob,
+} from '@/lib/adzuna';
+import { findOrCreateCompany, updateCompanyAgencyPattern } from '@/lib/companies/company-matcher';
 import {
   generateJobFingerprint,
   areJobsSimilar,
@@ -27,6 +33,9 @@ import {
   calculateSalaryIncrease,
   detectReferralBonus,
 } from '@/lib/jobs/salary-normalizer';
+import { classifyJobByDepartment } from '@/lib/jobs/department-classifier';
+import { detectUrgencyLevel, hasUrgencyKeywords } from '@/lib/jobs/urgency-detector';
+// Domain resolution removed from bulk ingestion - done on-demand via enrichment endpoints
 
 // Default UK regions (used if no ICP profiles exist)
 const DEFAULT_UK_REGIONS = [
@@ -96,6 +105,36 @@ async function getICPIndustries(supabase: ReturnType<typeof createAdminClient>):
   }
 
   return industries;
+}
+
+/**
+ * Get unique roles/keywords from all active ICP profiles
+ */
+async function getICPRoles(supabase: ReturnType<typeof createAdminClient>): Promise<string[]> {
+  const { data: profiles } = await supabase
+    .from('icp_profiles')
+    .select('specific_roles, signal_types')
+    .eq('is_active', true);
+
+  if (!profiles || profiles.length === 0) {
+    console.log('[ingest-jobs] No active ICP profiles, no roles to search');
+    return [];
+  }
+
+  // Collect unique roles from profiles that have 'job_pain' enabled
+  const allRoles = new Set<string>();
+  for (const profile of profiles) {
+    const signalTypes = profile.signal_types || [];
+    if (signalTypes.includes('job_pain')) {
+      for (const role of profile.specific_roles || []) {
+        allRoles.add(role);
+      }
+    }
+  }
+
+  const roles = Array.from(allRoles);
+  console.log(`[ingest-jobs] Found ${roles.length} unique roles from ${profiles.length} ICP profiles`);
+  return roles;
 }
 
 // Industry detection from job titles
@@ -208,10 +247,15 @@ export async function GET(request: NextRequest) {
 
   // Get location group from query parameter (for distributed cron scheduling)
   const group = request.nextUrl.searchParams.get('group');
+  // Get source filter (reed, adzuna, or both if not specified)
+  const sourceParam = request.nextUrl.searchParams.get('source') as 'reed' | 'adzuna' | null;
+  const runReed = !sourceParam || sourceParam === 'reed';
+  const runAdzuna = !sourceParam || sourceParam === 'adzuna';
 
   const supabase = createAdminClient();
   const stats = {
     reed_jobs_fetched: 0,
+    adzuna_jobs_fetched: 0,
     new_jobs_created: 0,
     existing_jobs_updated: 0,
     reposts_detected: 0,
@@ -244,60 +288,166 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Get ICP-specific roles/keywords to search for
+    const icpRoles = await getICPRoles(supabase);
+
     console.log(`[ingest-jobs] ICP Config - Locations: ${icpLocations.join(', ')}`);
     console.log(`[ingest-jobs] ICP Config - Industries: ${icpIndustries.size > 0 ? Array.from(icpIndustries).join(', ') : 'All'}`);
+    console.log(`[ingest-jobs] ICP Config - Roles: ${icpRoles.length > 0 ? icpRoles.join(', ') : 'None'}`);
+
+    // Skip if no roles configured
+    if (icpRoles.length === 0) {
+      console.log('[ingest-jobs] No ICP roles configured, skipping job ingestion');
+      return NextResponse.json({
+        success: true,
+        message: 'No ICP roles configured',
+        stats,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     // ==========================================
-    // STEP 1: Fetch jobs from Reed
+    // STEP 1: Fetch and process Reed jobs
     // ==========================================
-    console.log('[ingest-jobs] Fetching Reed jobs...');
+    let processed = 0;
+    let flaggedAgency = 0;
+    let skippedIndustry = 0;
 
-    const reedJobs = await searchReedMultipleLocations({
-      locations: icpLocations, // Location group filtering already applied above
-      postedWithin: 365, // Full year - captures old active jobs for "hard to fill" detection
-      postedByDirectEmployer: true,
-      maxPerLocation: 2000, // ~2000 jobs/location
-    });
+    if (runReed) {
+      console.log(`[ingest-jobs] Fetching Reed jobs for ${icpRoles.length} roles...`);
 
-    stats.reed_jobs_fetched = reedJobs.length;
-    console.log(`[ingest-jobs] Fetched ${reedJobs.length} Reed jobs`);
+      const reedJobs = await searchReedMultipleKeywords({
+        keywords: icpRoles,
+        locations: icpLocations,
+        postedWithin: 365,
+        directEmployerOnly: true,
+        limitPerSearch: 500, // Get more results per search
+      });
 
-    // ==========================================
-    // STEP 2: Process Reed jobs
-    // ==========================================
-    console.log('[ingest-jobs] Processing Reed jobs...');
+      stats.reed_jobs_fetched = reedJobs.length;
+      console.log(`[ingest-jobs] Fetched ${reedJobs.length} Reed jobs`);
+      console.log('[ingest-jobs] Processing Reed jobs...');
 
-    for (const reedJob of reedJobs) {
-      try {
-        // Skip recruitment agencies
-        if (isRecruitmentAgency(reedJob.employerName, reedJob.jobDescription)) {
-          continue;
+      for (const reedJob of reedJobs) {
+        try {
+          // Flag agency pattern but still ingest (no skip)
+          const isLikelyAgency = isRecruitmentAgency(reedJob.employerName, reedJob.jobDescription);
+          if (isLikelyAgency) {
+            flaggedAgency++;
+          }
+
+          const detectedIndustry = detectIndustryFromTitle(reedJob.jobTitle);
+
+          if (icpIndustries.size > 0 && !icpIndustries.has(detectedIndustry) && detectedIndustry !== 'Other') {
+            skippedIndustry++;
+            continue;
+          }
+
+          await processJob(supabase, {
+            source: 'reed',
+            sourceId: String(reedJob.jobId),
+            title: reedJob.jobTitle,
+            companyName: reedJob.employerName,
+            location: reedJob.locationName,
+            postedDate: reedJob.date,
+            sourceUrl: reedJob.jobUrl,
+            description: reedJob.jobDescription,
+            salary: parseReedSalary(reedJob),
+            detectedIndustry,
+            isLikelyAgency,
+          }, stats);
+
+          processed++;
+
+          if (processed % 200 === 0) {
+            console.log(`[ingest-jobs] Reed progress: ${processed}/${reedJobs.length} processed`);
+          }
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          stats.errors.push(`Reed job ${reedJob.jobId}: ${message}`);
         }
-
-        // Detect industry from job title
-        const detectedIndustry = detectIndustryFromTitle(reedJob.jobTitle);
-
-        // Filter by ICP industries if any are configured
-        if (icpIndustries.size > 0 && !icpIndustries.has(detectedIndustry) && detectedIndustry !== 'Other') {
-          continue; // Skip jobs not matching ICP industries
-        }
-
-        await processJob(supabase, {
-          source: 'reed',
-          sourceId: String(reedJob.jobId),
-          title: reedJob.jobTitle,
-          companyName: reedJob.employerName,
-          location: reedJob.locationName,
-          postedDate: reedJob.date,
-          sourceUrl: reedJob.jobUrl,
-          description: reedJob.jobDescription,
-          salary: parseReedSalary(reedJob),
-          detectedIndustry, // Already detected above
-        }, stats);
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        stats.errors.push(`Reed job ${reedJob.jobId}: ${message}`);
       }
+
+      console.log(`[ingest-jobs] Reed complete: ${processed} processed, ${flaggedAgency} agencies flagged, ${skippedIndustry} industry mismatch`);
+    } else {
+      console.log('[ingest-jobs] Skipping Reed (source filter)');
+    }
+
+    // ==========================================
+    // STEP 2: Fetch and process Adzuna jobs
+    // ==========================================
+    let adzunaProcessed = 0;
+    let adzunaFlaggedAgency = 0;
+    let adzunaSkippedIndustry = 0;
+
+    if (runAdzuna) {
+      console.log(`[ingest-jobs] Fetching Adzuna jobs for ${icpRoles.length} roles across ${icpLocations.length} locations...`);
+
+      const adzunaJobs = await searchAdzunaMultipleKeywords({
+        keywords: icpRoles,
+        locations: icpLocations,
+        maxDaysOld: 60,
+      });
+
+      stats.adzuna_jobs_fetched = adzunaJobs.length;
+      console.log(`[ingest-jobs] Fetched ${adzunaJobs.length} Adzuna jobs`);
+
+      for (const adzunaJob of adzunaJobs) {
+        try {
+          // Skip jobs with missing required fields
+          if (!adzunaJob.company?.display_name || !adzunaJob.location?.display_name) {
+            continue;
+          }
+
+          // Flag agency pattern but still ingest (no skip)
+          const isLikelyAgency = isRecruitmentAgency(adzunaJob.company.display_name, adzunaJob.description);
+          if (isLikelyAgency) {
+            adzunaFlaggedAgency++;
+          }
+
+          const detectedIndustry = adzunaJob.category?.tag
+            ? mapAdzunaCategoryToIndustry(adzunaJob.category.tag)
+            : detectIndustryFromTitle(adzunaJob.title);
+
+          if (icpIndustries.size > 0 && !icpIndustries.has(detectedIndustry) && detectedIndustry !== 'Other') {
+            adzunaSkippedIndustry++;
+            continue;
+          }
+
+          await processJob(supabase, {
+            source: 'adzuna',
+            sourceId: adzunaJob.id,
+            title: adzunaJob.title,
+            companyName: adzunaJob.company.display_name,
+            location: adzunaJob.location.display_name,
+            postedDate: parseAdzunaDate(adzunaJob.created) || adzunaJob.created,
+            sourceUrl: adzunaJob.redirect_url,
+            description: adzunaJob.description,
+            salary: {
+              annual_min: adzunaJob.salary_min ? Math.round(adzunaJob.salary_min) : null,
+              annual_max: adzunaJob.salary_max ? Math.round(adzunaJob.salary_max) : null,
+              salary_type: 'annual',
+              confidence: adzunaJob.salary_is_predicted === '0' ? 'high' : 'low',
+            },
+            detectedIndustry,
+            contractType: adzunaJob.contract_type,
+            isLikelyAgency,
+          }, stats);
+
+          adzunaProcessed++;
+
+          if (adzunaProcessed % 200 === 0) {
+            console.log(`[ingest-jobs] Adzuna progress: ${adzunaProcessed}/${adzunaJobs.length} processed`);
+          }
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          stats.errors.push(`Adzuna job ${adzunaJob.id}: ${message}`);
+        }
+      }
+
+      console.log(`[ingest-jobs] Adzuna complete: ${adzunaProcessed} processed, ${adzunaFlaggedAgency} agencies flagged, ${adzunaSkippedIndustry} industry mismatch`);
+    } else {
+      console.log('[ingest-jobs] Skipping Adzuna (source filter)');
     }
 
     // ==========================================
@@ -345,7 +495,7 @@ export async function GET(request: NextRequest) {
 async function processJob(
   supabase: ReturnType<typeof createAdminClient>,
   job: {
-    source: 'reed';
+    source: 'reed' | 'adzuna';
     sourceId: string;
     title: string;
     companyName: string;
@@ -361,6 +511,7 @@ async function processJob(
     };
     detectedIndustry: string;
     contractType?: string;
+    isLikelyAgency?: boolean;
   },
   stats: {
     new_jobs_created: number;
@@ -376,10 +527,16 @@ async function processJob(
     name: job.companyName,
     location: job.location,
     industry: job.detectedIndustry,
+    is_likely_agency_pattern: job.isLikelyAgency,
   });
 
   if (match_type === 'new') {
     stats.companies_created++;
+    // Domain resolution is now done on-demand via /api/companies/[id]/enrich
+    // or /api/admin/backfill-domains to avoid slowing down bulk ingestion
+  } else if (job.isLikelyAgency) {
+    // Update existing company's agency flag
+    await updateCompanyAgencyPattern(company.id, true);
   }
 
   // Generate fingerprint
@@ -397,7 +554,7 @@ async function processJob(
     .single();
 
   if (existingJob) {
-    // Update last_seen_at
+    // Update last_seen_at - single DB call for existing jobs
     await supabase
       .from('job_postings')
       .update({
@@ -406,13 +563,8 @@ async function processJob(
       })
       .eq('id', existingJob.id);
 
-    // Record observation
-    await supabase.from('job_observations').insert({
-      job_posting_id: existingJob.id,
-      salary_min: job.salary.annual_min,
-      salary_max: job.salary.annual_max,
-      was_active: true,
-    });
+    // Skip job_observations for bulk ingestion (reduces DB calls by 50%)
+    // Observations can be reconstructed from last_seen_at timestamps if needed
 
     stats.existing_jobs_updated++;
     return;
@@ -461,10 +613,16 @@ async function processJob(
     ? detectReferralBonus(job.description)
     : { hasBonus: false, amount: null };
 
+  // Sprint 3: Classify department and detect urgency
+  const department = classifyJobByDepartment(job.title);
+  const urgencyLevel = job.description ? detectUrgencyLevel(job.description) : null;
+  const hasUrgency = job.description ? hasUrgencyKeywords(job.description) : false;
+
   // Insert new job posting
   const { error: insertError } = await supabase.from('job_postings').insert({
     company_id: company.id,
-    reed_job_id: job.sourceId,
+    reed_job_id: job.source === 'reed' ? job.sourceId : null,
+    adzuna_job_id: job.source === 'adzuna' ? job.sourceId : null,
     fingerprint,
     title: job.title,
     title_normalized: normalizeJobTitle(job.title),
@@ -486,6 +644,10 @@ async function processJob(
     referral_bonus_amount: referralBonus.amount,
     raw_description: job.description?.substring(0, 5000),
     employer_name_from_source: job.companyName,
+    // Sprint 3: Department and urgency fields
+    department,
+    urgency_level: urgencyLevel,
+    has_urgency_keywords: hasUrgency,
   });
 
   if (insertError) {

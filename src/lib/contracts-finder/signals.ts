@@ -105,6 +105,11 @@ export function detectContractAwardSignal(
   const valueStr = award.value_gbp ? formatValue(award.value_gbp) : 'undisclosed value';
   const domainResolved = !!syncResult.domain;
 
+  // Format the award date
+  const awardDateStr = award.award_date
+    ? new Date(award.award_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '';
+
   return {
     companyId: syncResult.company_id,
     contractId,
@@ -113,7 +118,7 @@ export function detectContractAwardSignal(
     urgency: tierInfo.urgency,
     confidence: tierInfo.confidence,
     title: `Won ${valueStr} government contract`,
-    detail: `${syncResult.company_name} awarded "${award.title}" (${valueStr}) by ${award.buyer_name}. Companies winning government contracts typically need to scale up to deliver.`,
+    detail: `${syncResult.company_name} awarded "${award.title}" (${valueStr}) by ${award.buyer_name}${awardDateStr ? ` on ${awardDateStr}` : ''}. Companies winning government contracts typically need to scale up to deliver.`,
     sourceUrl: award.source_url,
     metadata: {
       contract_value: award.value_gbp,
@@ -145,6 +150,11 @@ export function detectFirstContractSignal(
   const valueStr = award.value_gbp ? formatValue(award.value_gbp) : 'undisclosed value';
   const domainResolved = !!syncResult.domain;
 
+  // Format the award date
+  const awardDateStr = award.award_date
+    ? new Date(award.award_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '';
+
   return {
     companyId: syncResult.company_id,
     contractId,
@@ -153,7 +163,7 @@ export function detectFirstContractSignal(
     urgency: config.urgency,
     confidence: config.confidence_base,
     title: `First government contract win (${valueStr})`,
-    detail: `${syncResult.company_name} won their first government contract: "${award.title}" from ${award.buyer_name}. First-time contractors often need significant hiring to build delivery capability.`,
+    detail: `${syncResult.company_name} won their first government contract: "${award.title}" from ${award.buyer_name}${awardDateStr ? ` on ${awardDateStr}` : ''}. First-time contractors often need significant hiring to build delivery capability.`,
     sourceUrl: award.source_url,
     metadata: {
       contract_value: award.value_gbp,
@@ -235,26 +245,3 @@ export async function detectMultipleContractWins(
   };
 }
 
-/**
- * Check if a signal already exists for this contract/ICP combination
- */
-export async function signalExists(
-  companyId: string,
-  contractId: string,
-  signalType: string,
-  icpProfileId: string
-): Promise<boolean> {
-  const supabase = createAdminClient();
-
-  const { data } = await supabase
-    .from('company_pain_signals')
-    .select('id')
-    .eq('company_id', companyId)
-    .eq('source_contract_id', contractId)
-    .eq('pain_signal_type', signalType)
-    .eq('icp_profile_id', icpProfileId)
-    .eq('is_active', true)
-    .single();
-
-  return !!data;
-}

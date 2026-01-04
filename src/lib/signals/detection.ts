@@ -50,6 +50,11 @@ export const PAIN_SCORES: Record<
 
   // Multiple roles
   multiple_open_roles: { pain_score: 10, urgency: 'short_term', confidence_base: 70 },
+  multiple_open_roles_significant: { pain_score: 20, urgency: 'immediate', confidence_base: 85 },
+  multiple_open_roles_mass: { pain_score: 30, urgency: 'immediate', confidence_base: 90 },
+
+  // Department concentration (Sprint 3)
+  department_hiring_concentration: { pain_score: 30, urgency: 'immediate', confidence_base: 85 },
 
   // COMPANIES HOUSE - Leadership signals
   new_director_appointment: { pain_score: 25, urgency: 'immediate', confidence_base: 85 },

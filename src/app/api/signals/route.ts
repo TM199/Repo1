@@ -101,8 +101,15 @@ export async function GET(request: NextRequest) {
     filteredData = filteredData.filter(s => !s.contacts || s.contacts.length === 0);
   }
 
+  // Limit contacts per signal to prevent slow queries (max 10 per signal)
+  const MAX_CONTACTS_PER_SIGNAL = 10;
+  const dataWithLimitedContacts = filteredData.map(signal => ({
+    ...signal,
+    contacts: (signal.contacts || []).slice(0, MAX_CONTACTS_PER_SIGNAL),
+  }));
+
   return NextResponse.json({
-    data: filteredData,
+    data: dataWithLimitedContacts,
     total: count || 0,
     hasMore: (offset + limit) < (count || 0)
   });

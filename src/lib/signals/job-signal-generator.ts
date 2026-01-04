@@ -67,7 +67,8 @@ export async function generateJobPainSignals(
   if (signalConfig) {
     const { signalType, painScore, urgency, isHardToFill } = signalConfig;
 
-    await supabase.from('company_pain_signals').insert({
+    // Use UPSERT to handle duplicates atomically
+    await supabase.from('company_pain_signals').upsert({
       company_id: company.id,
       icp_profile_id: icpProfileId,
       pain_signal_type: signalType,
@@ -85,6 +86,9 @@ export async function generateJobPainSignals(
       days_since_refresh: daysSinceRefresh,
       pain_score_contribution: painScore,
       urgency,
+      detected_at: new Date().toISOString(),
+    }, {
+      onConflict: 'company_id,source_job_posting_id,pain_signal_type,icp_profile_id',
     });
     signalsGenerated++;
   }
@@ -105,7 +109,8 @@ export async function generateJobPainSignals(
       painScore = PAIN_SCORES.job_reposted_once.pain_score;
     }
 
-    await supabase.from('company_pain_signals').insert({
+    // Use UPSERT to handle duplicates atomically
+    await supabase.from('company_pain_signals').upsert({
       company_id: company.id,
       icp_profile_id: icpProfileId,
       pain_signal_type: signalType,
@@ -115,6 +120,9 @@ export async function generateJobPainSignals(
       signal_value: job.repost_count,
       pain_score_contribution: painScore,
       urgency: 'immediate',
+      detected_at: new Date().toISOString(),
+    }, {
+      onConflict: 'company_id,source_job_posting_id,pain_signal_type,icp_profile_id',
     });
     signalsGenerated++;
   }
@@ -128,7 +136,8 @@ export async function generateJobPainSignals(
       ? PAIN_SCORES.salary_increase_20_percent.pain_score
       : PAIN_SCORES.salary_increase_10_percent.pain_score;
 
-    await supabase.from('company_pain_signals').insert({
+    // Use UPSERT to handle duplicates atomically
+    await supabase.from('company_pain_signals').upsert({
       company_id: company.id,
       icp_profile_id: icpProfileId,
       pain_signal_type: signalType,
@@ -138,6 +147,9 @@ export async function generateJobPainSignals(
       signal_value: job.salary_increase_from_previous,
       pain_score_contribution: painScore,
       urgency: 'immediate',
+      detected_at: new Date().toISOString(),
+    }, {
+      onConflict: 'company_id,source_job_posting_id,pain_signal_type,icp_profile_id',
     });
     signalsGenerated++;
   }
@@ -148,7 +160,8 @@ export async function generateJobPainSignals(
       ? `£${job.referral_bonus_amount.toLocaleString()}`
       : 'offered';
 
-    await supabase.from('company_pain_signals').insert({
+    // Use UPSERT to handle duplicates atomically
+    await supabase.from('company_pain_signals').upsert({
       company_id: company.id,
       icp_profile_id: icpProfileId,
       pain_signal_type: 'high_referral_bonus',
@@ -158,6 +171,9 @@ export async function generateJobPainSignals(
       signal_value: job.referral_bonus_amount || 0,
       pain_score_contribution: PAIN_SCORES.high_referral_bonus.pain_score,
       urgency: 'short_term',
+      detected_at: new Date().toISOString(),
+    }, {
+      onConflict: 'company_id,source_job_posting_id,pain_signal_type,icp_profile_id',
     });
     signalsGenerated++;
   }
@@ -218,7 +234,8 @@ export async function createSalaryChangeSignal(
     ? PAIN_SCORES.salary_increase_20_percent.pain_score
     : PAIN_SCORES.salary_increase_10_percent.pain_score;
 
-  await supabase.from('company_pain_signals').insert({
+  // Use UPSERT to handle duplicates atomically
+  await supabase.from('company_pain_signals').upsert({
     company_id: company.id,
     icp_profile_id: icpProfileId,
     pain_signal_type: signalType,
@@ -228,6 +245,9 @@ export async function createSalaryChangeSignal(
     signal_value: salaryIncrease,
     pain_score_contribution: painScore,
     urgency: 'immediate',
+    detected_at: new Date().toISOString(),
+  }, {
+    onConflict: 'company_id,source_job_posting_id,pain_signal_type,icp_profile_id',
   });
 
   await recalculateCompanyPainScore(supabase, company.id);
@@ -258,7 +278,8 @@ export async function createRepostSignal(
     painScore = PAIN_SCORES.job_reposted_once.pain_score;
   }
 
-  await supabase.from('company_pain_signals').insert({
+  // Use UPSERT to handle duplicates atomically
+  await supabase.from('company_pain_signals').upsert({
     company_id: company.id,
     icp_profile_id: icpProfileId,
     pain_signal_type: signalType,
@@ -268,6 +289,9 @@ export async function createRepostSignal(
     signal_value: repostCount,
     pain_score_contribution: painScore,
     urgency: 'immediate',
+    detected_at: new Date().toISOString(),
+  }, {
+    onConflict: 'company_id,source_job_posting_id,pain_signal_type,icp_profile_id',
   });
 
   await recalculateCompanyPainScore(supabase, company.id);

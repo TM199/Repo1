@@ -27,6 +27,5 @@ export {
   detectContractAwardSignal,
   detectFirstContractSignal,
   detectMultipleContractWins,
-  signalExists,
   type ContractSignalCandidate,
 } from './signals';

@@ -57,10 +57,16 @@ export async function POST(request: NextRequest) {
       .eq('user_id', user.id);
   }
 
-  // Get signal with contacts
+  // Get signal with company and contacts from company_pain_signals
   const { data: signal, error: signalError } = await adminSupabase
-    .from('signals')
-    .select('*, contacts:signal_contacts(*)')
+    .from('company_pain_signals')
+    .select(`
+      *,
+      companies:company_id(
+        id, name, domain, industry, region,
+        company_contacts(*)
+      )
+    `)
     .eq('id', signalId)
     .single();
 
@@ -68,18 +74,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Signal not found' }, { status: 404 });
   }
 
+  const company = signal.companies;
+  if (!company) {
+    return NextResponse.json({ error: 'Company not found for signal' }, { status: 404 });
+  }
+
   // Push to HubSpot
   const result = await pushSignalToHubSpot(
     accessToken,
     {
-      company_name: signal.company_name,
-      company_domain: signal.company_domain,
-      location: signal.location,
-      industry: signal.industry,
+      company_name: company.name,
+      company_domain: company.domain,
+      location: company.region,
+      industry: company.industry,
       signal_title: signal.signal_title,
       signal_detail: signal.signal_detail,
     },
-    signal.contacts || []
+    company.company_contacts || []
   );
 
   if (!result.success) {

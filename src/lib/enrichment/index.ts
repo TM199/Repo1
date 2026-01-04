@@ -56,8 +56,8 @@ export type EnrichmentEvent =
   | { type: 'finding_phone'; name: string }
   | { type: 'phone_found'; phone: string }
   | { type: 'contact_complete'; contact: EnrichedContact }
-  | { type: 'complete'; contacts: EnrichedContact[] }
-  | { type: 'error'; message: string };
+  | { type: 'complete'; contacts?: EnrichedContact[]; message?: string; summary?: { total_found: number; total_saved: number; failed: number } }
+  | { type: 'error'; message: string; contacts_saved?: number };
 
 export async function enrichSignal(
   companyDomain: string,
@@ -103,6 +103,88 @@ export async function enrichSignal(
     }
 
     // 3. Get phone if enabled (Prospeo)
+    let phone = null;
+    if (includePhone && contact.profile_url) {
+      onProgress?.({ type: 'finding_phone', name: contact.name });
+      phone = await findPhone(contact.profile_url, prospeoKey);
+      if (phone) {
+        onProgress?.({ type: 'phone_found', phone });
+      }
+    }
+
+    const enrichedContact: EnrichedContact = {
+      full_name: contact.name,
+      first_name: contact.first_name,
+      last_name: contact.last_name,
+      job_title: role,
+      seniority: detectSeniority(role),
+      email: emailResult?.email || null,
+      email_status: emailResult?.status || null,
+      phone,
+      linkedin_url: contact.profile_url,
+    };
+
+    contacts.push(enrichedContact);
+    onProgress?.({ type: 'contact_complete', contact: enrichedContact });
+  }
+
+  onProgress?.({ type: 'complete', contacts });
+  return contacts;
+}
+
+/**
+ * Enrich signal with custom roles (user-selected)
+ */
+export async function enrichSignalWithRoles(
+  companyDomain: string,
+  companyName: string,
+  roles: string[],
+  leadmagicKey: string,
+  prospeoKey: string,
+  includePhone: boolean = false,
+  onProgress?: (event: EnrichmentEvent) => void
+): Promise<EnrichedContact[]> {
+  const contacts: EnrichedContact[] = [];
+  let domainToUse = companyDomain;
+
+  onProgress?.({ type: 'roles', roles });
+
+  for (let i = 0; i < roles.length; i++) {
+    const role = roles[i];
+    onProgress?.({ type: 'searching_role', role, index: i, total: roles.length });
+
+    // Find contact by role (LeadMagic)
+    const contact = await findContactByRole(domainToUse || '', companyName, role, leadmagicKey);
+    if (!contact) {
+      onProgress?.({ type: 'role_not_found', role });
+      continue;
+    }
+
+    onProgress?.({ type: 'found_contact', role, name: contact.name });
+
+    // Extract domain from LeadMagic if we don't have one
+    if (!domainToUse && contact.company_website) {
+      domainToUse = contact.company_website;
+      console.log(`[Enrichment] Got domain from LeadMagic: ${domainToUse}`);
+    }
+
+    // Get email (Prospeo) - needs domain
+    onProgress?.({ type: 'finding_email', name: contact.name });
+    let emailResult = null;
+    if (domainToUse) {
+      emailResult = await findEmail(
+        contact.first_name,
+        contact.last_name,
+        domainToUse,
+        prospeoKey
+      );
+    }
+
+    if (emailResult?.email) {
+      onProgress?.({ type: 'email_found', email: emailResult.email, status: emailResult.status || 'unknown' });
+    }
+
+    // Get phone if enabled (Prospeo)
     let phone = null;
     if (includePhone && contact.profile_url) {
       onProgress?.({ type: 'finding_phone', name: contact.name });
@@ -220,8 +302,13 @@ export async function enrichWithWaterfall(
 
       if (contact) {
         console.log(`[Waterfall] LeadMagic found contact without domain!`);
-        domainSource = 'leadmagic_direct';
-        domainConfidence = 80;
+        // Extract domain from LeadMagic response if available
+        if (contact.company_website) {
+          resolvedDomain = contact.company_website;
+          domainSource = 'leadmagic_direct';
+          domainConfidence = 80;
+          console.log(`[Waterfall] Got domain from LeadMagic: ${resolvedDomain}`);
+        }
       } else {
         // Fall through domain resolution strategies
         for (const strategy of strategies) {

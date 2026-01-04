@@ -30,7 +30,7 @@ export default function HomePage() {
             <Link href="#signals" className="text-sm text-[#425466] hover:text-[#0A2540] transition-colors">
               Signal Types
             </Link>
-            <Link href="#pricing" className="text-sm text-[#425466] hover:text-[#0A2540] transition-colors">
+            <Link href="/pricing" className="text-sm text-[#425466] hover:text-[#0A2540] transition-colors">
               Pricing
             </Link>
           </div>

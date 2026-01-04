@@ -59,18 +59,18 @@ export function SearchProfileCard({ profile, lastRunDate }: SearchProfileCardPro
   }
 
   return (
-    <Card className="bg-white border-[#E3E8EE] shadow-sm hover:shadow-md transition-all duration-200 group">
+    <Card className="bg-card border-border shadow-sm hover:shadow-md transition-all duration-200 group">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-2">
-              <h3 className="font-semibold text-[#0A2540] text-sm">{profile.name}</h3>
+              <h3 className="font-semibold text-foreground text-sm">{profile.name}</h3>
               <Badge
                 variant="outline"
                 className={`text-[10px] font-medium px-2 py-0.5 border-0 ${
                   profile.is_active
                     ? 'bg-[#D1FAE5] text-[#047857]'
-                    : 'bg-[#F0F3F7] text-[#6B7C93]'
+                    : 'bg-[#F0F3F7] text-muted-foreground'
                 }`}
               >
                 {profile.is_active ? 'Active' : 'Paused'}
@@ -78,7 +78,7 @@ export function SearchProfileCard({ profile, lastRunDate }: SearchProfileCardPro
             </div>
 
             <div className="mb-3">
-              <Badge className="bg-[#EEF2FF] text-[#635BFF] text-[10px] font-medium px-2 py-0.5 border-0">
+              <Badge className="bg-primary/10 text-primary text-[10px] font-medium px-2 py-0.5 border-0">
                 {getIndustryLabel(profile.industry)}
               </Badge>
             </div>
@@ -88,7 +88,7 @@ export function SearchProfileCard({ profile, lastRunDate }: SearchProfileCardPro
                 <Badge
                   key={loc}
                   variant="outline"
-                  className="text-[10px] bg-[#F6F9FC] text-[#425466] border-[#E3E8EE] px-2 py-0.5"
+                  className="text-[10px] bg-muted text-muted-foreground border-border px-2 py-0.5"
                 >
                   {getLocationLabel(loc)}
                 </Badge>
@@ -96,7 +96,7 @@ export function SearchProfileCard({ profile, lastRunDate }: SearchProfileCardPro
               {profile.locations.length > 3 && (
                 <Badge
                   variant="outline"
-                  className="text-[10px] bg-[#F6F9FC] text-[#6B7C93] border-[#E3E8EE] px-2 py-0.5"
+                  className="text-[10px] bg-muted text-muted-foreground border-border px-2 py-0.5"
                 >
                   +{profile.locations.length - 3} more
                 </Badge>
@@ -110,7 +110,7 @@ export function SearchProfileCard({ profile, lastRunDate }: SearchProfileCardPro
                   <Badge
                     key={signalType}
                     variant="outline"
-                    className="text-[10px] bg-white text-[#425466] border-[#E3E8EE] px-2 py-0.5"
+                    className="text-[10px] bg-card text-muted-foreground border-border px-2 py-0.5"
                   >
                     {config?.icon} {config?.label || signalType}
                   </Badge>
@@ -119,15 +119,15 @@ export function SearchProfileCard({ profile, lastRunDate }: SearchProfileCardPro
               {profile.signal_types.length > 3 && (
                 <Badge
                   variant="outline"
-                  className="text-[10px] bg-white text-[#6B7C93] border-[#E3E8EE] px-2 py-0.5"
+                  className="text-[10px] bg-card text-muted-foreground border-border px-2 py-0.5"
                 >
                   +{profile.signal_types.length - 3} more
                 </Badge>
               )}
             </div>
 
-            <div className="flex items-center gap-4 text-[11px] text-[#6B7C93]">
-              <span className="capitalize px-2 py-0.5 bg-[#F6F9FC] rounded text-[#425466] font-medium">
+            <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+              <span className="capitalize px-2 py-0.5 bg-muted rounded text-muted-foreground font-medium">
                 {profile.search_frequency}
               </span>
               {lastRunDate && (
@@ -161,7 +161,7 @@ export function SearchProfileCard({ profile, lastRunDate }: SearchProfileCardPro
               size="icon"
               onClick={handleRun}
               disabled={running}
-              className="h-8 w-8 text-[#6B7C93] hover:text-[#635BFF] hover:bg-[#EEF2FF]"
+              className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
               title="Run search"
             >
               {running ? (
@@ -174,7 +174,7 @@ export function SearchProfileCard({ profile, lastRunDate }: SearchProfileCardPro
               variant="ghost"
               size="icon"
               onClick={handleEdit}
-              className="h-8 w-8 text-[#6B7C93] hover:text-[#0A2540] hover:bg-[#F6F9FC]"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
               title="Edit profile"
             >
               <Edit className="h-4 w-4" />
@@ -183,7 +183,7 @@ export function SearchProfileCard({ profile, lastRunDate }: SearchProfileCardPro
               variant="ghost"
               size="icon"
               onClick={handleDelete}
-              className="h-8 w-8 text-[#6B7C93] hover:text-[#CD3D64] hover:bg-[#FEE2E2]"
+              className="h-8 w-8 text-muted-foreground hover:text-[#CD3D64] hover:bg-[#FEE2E2]"
               title="Delete profile"
             >
               <Trash2 className="h-4 w-4" />

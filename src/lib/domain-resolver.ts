@@ -14,7 +14,7 @@ const domainCache = new Map<string, DomainResolutionResult>();
 
 export interface DomainResolutionResult {
   domain: string;
-  source: 'url_extract' | 'google_search' | 'guessed' | 'none';
+  source: 'url_extract' | 'tavily' | 'google_search' | 'guessed' | 'none';
   confidence: number; // 0-100
 }
 
@@ -236,6 +236,7 @@ export async function resolveDomain(
     contactUrl?: string;
     skipLookup?: boolean;
     skipGoogle?: boolean;
+    skipTavily?: boolean;
     skipCache?: boolean;
   }
 ): Promise<DomainResolutionResult> {
@@ -272,7 +273,27 @@ export async function resolveDomain(
   }
 
   if (!options?.skipLookup) {
-    // Strategy 2: Google Search via Firecrawl (60% confidence)
+    // Strategy 2: Tavily Web Search (80% confidence) - NEW
+    if (!options?.skipTavily && process.env.TAVILY_API_KEY) {
+      console.log(`[Domain Resolver] Trying Tavily for: ${companyName}`);
+      try {
+        const { searchCompanyWebsite } = await import('@/lib/ai/tavily');
+        const tavilyResult = await searchCompanyWebsite(companyName);
+        if (tavilyResult.domain && tavilyResult.confidence >= 70) {
+          const result: DomainResolutionResult = {
+            domain: tavilyResult.domain,
+            source: 'tavily',
+            confidence: tavilyResult.confidence,
+          };
+          domainCache.set(cacheKey, result);
+          return result;
+        }
+      } catch (error) {
+        console.error('[Domain Resolver] Tavily error:', error);
+      }
+    }
+
+    // Strategy 3: Google Search via Firecrawl (60% confidence)
     if (!options?.skipGoogle) {
       console.log(`[Domain Resolver] Trying Google search for: ${companyName}`);
       const googleResult = await lookupViaGoogleSearch(companyName);
@@ -282,7 +303,7 @@ export async function resolveDomain(
       }
     }
 
-    // Strategy 3: Intelligent guessing with DNS validation (40% confidence)
+    // Strategy 4: Intelligent guessing with DNS validation (40% confidence)
     console.log(`[Domain Resolver] Trying DNS validation for: ${companyName}`);
     const guessResult = await guessAndValidate(companyName);
     if (guessResult) {

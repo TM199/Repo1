@@ -247,7 +247,7 @@ export function AgencyResultsPanel({ signals, onSignalsUpdated }: AgencyResultsP
       <Card>
         <CardContent className="py-12 text-center">
           <Building2 className="h-12 w-12 mx-auto text-gray-300 mb-4" />
-          <p className="text-[#6B7C93]">No signals found. Try broadening your criteria.</p>
+          <p className="text-muted-foreground">No signals found. Try broadening your criteria.</p>
         </CardContent>
       </Card>
     );
@@ -272,7 +272,7 @@ export function AgencyResultsPanel({ signals, onSignalsUpdated }: AgencyResultsP
                 size="sm"
                 onClick={handleSaveSelected}
                 disabled={saving || selectedHashes.size === 0}
-                className="bg-[#635BFF] hover:bg-[#5851ea]"
+                className="bg-primary hover:bg-primary/90"
               >
                 {saving ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -300,7 +300,7 @@ export function AgencyResultsPanel({ signals, onSignalsUpdated }: AgencyResultsP
       </div>
 
       {/* Stats */}
-      <div className="flex gap-4 text-sm text-[#6B7C93]">
+      <div className="flex gap-4 text-sm text-muted-foreground">
         <span>{newSignals.length} new</span>
         <span>{savedSignals.length} saved</span>
         <span>{existingSignals.length} already in database</span>
@@ -363,22 +363,22 @@ export function AgencyResultsPanel({ signals, onSignalsUpdated }: AgencyResultsP
                       )}
                     </div>
 
-                    <h3 className="font-semibold text-[#0A2540] mb-1 truncate">
+                    <h3 className="font-semibold text-foreground mb-1 truncate">
                       {signal.company_name}
                     </h3>
 
-                    <p className="text-sm font-medium text-[#0A2540] mb-1">
+                    <p className="text-sm font-medium text-foreground mb-1">
                       {signal.signal_title}
                     </p>
 
                     {signal.signal_detail && (
-                      <p className="text-sm text-[#6B7C93] line-clamp-2">
+                      <p className="text-sm text-muted-foreground line-clamp-2">
                         {signal.signal_detail}
                       </p>
                     )}
 
                     {signal.company_domain && (
-                      <p className="text-xs text-[#6B7C93] mt-2">
+                      <p className="text-xs text-muted-foreground mt-2">
                         {signal.company_domain}
                       </p>
                     )}
@@ -386,7 +386,7 @@ export function AgencyResultsPanel({ signals, onSignalsUpdated }: AgencyResultsP
                     {/* Contacts display */}
                     {hasContacts && (
                       <div className="mt-3 pt-3 border-t border-gray-100">
-                        <p className="text-xs font-medium text-[#0A2540] mb-2">
+                        <p className="text-xs font-medium text-foreground mb-2">
                           Contacts ({signal.contacts!.length})
                         </p>
                         <div className="space-y-2">
@@ -394,13 +394,13 @@ export function AgencyResultsPanel({ signals, onSignalsUpdated }: AgencyResultsP
                             const emailColor = emailStatusColors[contact.email_status || 'unknown'];
                             return (
                               <div key={idx} className="flex items-center gap-3 text-sm flex-wrap">
-                                <span className="font-medium text-[#0A2540]">{contact.full_name}</span>
+                                <span className="font-medium text-foreground">{contact.full_name}</span>
                                 {contact.job_title && (
-                                  <span className="text-[#6B7C93]">({contact.job_title})</span>
+                                  <span className="text-muted-foreground">({contact.job_title})</span>
                                 )}
                                 {contact.email && (
                                   <div className="flex items-center gap-1">
-                                    <Mail className="h-3 w-3 text-[#6B7C93]" />
+                                    <Mail className="h-3 w-3 text-muted-foreground" />
                                     <span
                                       className="text-xs px-1.5 py-0.5 rounded flex items-center gap-1"
                                       style={{ backgroundColor: emailColor.bg, color: emailColor.text }}
@@ -412,7 +412,7 @@ export function AgencyResultsPanel({ signals, onSignalsUpdated }: AgencyResultsP
                                 )}
                                 {contact.phone && (
                                   <div className="flex items-center gap-1">
-                                    <Phone className="h-3 w-3 text-[#6B7C93]" />
+                                    <Phone className="h-3 w-3 text-muted-foreground" />
                                     <span className="text-xs">{contact.phone}</span>
                                   </div>
                                 )}
@@ -453,7 +453,7 @@ export function AgencyResultsPanel({ signals, onSignalsUpdated }: AgencyResultsP
                         href={signal.signal_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[#635BFF] hover:text-[#5851ea]"
+                        className="text-primary hover:text-primary/80"
                       >
                         <ExternalLink className="h-4 w-4" />
                       </a>

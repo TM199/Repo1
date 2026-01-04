@@ -33,9 +33,12 @@ interface ExportCompany {
   id: string;
   name: string;
   domain: string | null;
+  domain_source: string | null;
   industry: string | null;
   location: string | null;
   total_pain_score: number;
+  is_recruitment_agency: boolean | null;
+  agency_confidence: number | null;
   last_enriched_at: string | null;
   company_pain_signals: PainSignal[];
   company_contacts?: CompanyContact[];
@@ -54,6 +57,9 @@ function companiesToCsv(companies: ExportCompany[]): string {
   const headers = [
     'company_name',
     'company_domain',
+    'domain_source',
+    'is_recruitment_agency',
+    'agency_confidence',
     'industry',
     'location',
     'total_pain_score',
@@ -83,6 +89,9 @@ function companiesToCsv(companies: ExportCompany[]): string {
     const baseRow = [
       escapeField(company.name),
       escapeField(company.domain),
+      escapeField(company.domain_source),
+      company.is_recruitment_agency === null ? '' : String(company.is_recruitment_agency),
+      company.agency_confidence === null ? '' : String(company.agency_confidence),
       escapeField(company.industry),
       escapeField(company.location),
       String(company.total_pain_score || 0),
@@ -131,16 +140,21 @@ export async function GET(request: NextRequest) {
   const format = searchParams.get('format') || 'csv';
   const minPainScore = parseInt(searchParams.get('minPainScore') || '0');
   const enrichedOnly = searchParams.get('enrichedOnly') === 'true';
+  const limit = Math.min(parseInt(searchParams.get('limit') || '500'), 1000); // Max 1000 companies
+  const offset = parseInt(searchParams.get('offset') || '0');
 
   const adminSupabase = createAdminClient();
 
-  // Build query
+  // Build query with pagination
   let query = adminSupabase
     .from('companies')
     .select(`
       id,
       name,
       domain,
+      domain_source,
+      is_recruitment_agency,
+      agency_confidence,
       industry,
       location,
       total_pain_score,
@@ -153,15 +167,16 @@ export async function GET(request: NextRequest) {
         job_url,
         detected_at
       )
-    `)
+    `, { count: 'exact' })
     .gte('total_pain_score', minPainScore)
-    .order('total_pain_score', { ascending: false });
+    .order('total_pain_score', { ascending: false })
+    .range(offset, offset + limit - 1);
 
   if (enrichedOnly) {
     query = query.not('last_enriched_at', 'is', null);
   }
 
-  const { data: companies, error } = await query;
+  const { data: companies, error, count } = await query;
 
   if (error) {
     console.error('[export] Query error:', error);
@@ -190,7 +205,15 @@ export async function GET(request: NextRequest) {
   }
 
   if (format === 'json') {
-    return NextResponse.json(companiesWithContacts);
+    return NextResponse.json({
+      companies: companiesWithContacts,
+      pagination: {
+        total: count || 0,
+        limit,
+        offset,
+        hasMore: (offset + limit) < (count || 0),
+      },
+    });
   }
 
   // Default: CSV

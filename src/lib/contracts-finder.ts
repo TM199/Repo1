@@ -140,6 +140,30 @@ function extractDomainFromSupplier(release: OCDSRelease, supplierName: string): 
   return '';
 }
 
+/**
+ * Format contract value for display
+ */
+function formatContractValue(value: number | undefined | null): string {
+  if (!value) return '';
+  if (value >= 1000000) {
+    return `£${(value / 1000000).toFixed(1)}m`;
+  } else if (value >= 1000) {
+    return `£${(value / 1000).toFixed(0)}k`;
+  }
+  return `£${value.toLocaleString()}`;
+}
+
+/**
+ * Get contract size tier for signal title
+ */
+function getContractTier(value: number | undefined | null): string {
+  if (!value) return '';
+  if (value >= 1000000) return 'major';
+  if (value >= 100000) return 'significant';
+  if (value >= 10000) return 'standard';
+  return 'small';
+}
+
 function parseOCDSRelease(release: OCDSRelease): ContractSignal[] {
   const signals: ContractSignal[] = [];
 
@@ -158,16 +182,83 @@ function parseOCDSRelease(release: OCDSRelease): ContractSignal[] {
       const tenderTitle = release.tender?.title || award.title || 'Contract Award';
       const description = release.tender?.description || award.description || '';
       const value = award.value?.amount || release.tender?.value?.amount;
+      const formattedValue = formatContractValue(value);
+      const tier = getContractTier(value);
 
       // Get location from buyer address
       const buyerParty = release.parties?.find(p => p.roles.includes('buyer'));
       const location = buyerParty?.address?.locality || buyerParty?.address?.region || null;
 
+      // Format the award date (the most important info)
+      const awardDate = award.date ? new Date(award.date) : null;
+      const awardDateStr = awardDate
+        ? awardDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+        : '';
+
+      // Get contract period if available
+      const startDate = award.contractPeriod?.startDate;
+      const endDate = award.contractPeriod?.endDate;
+      let periodStr = '';
+      if (startDate && endDate) {
+        const start = new Date(startDate).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+        const end = new Date(endDate).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+        periodStr = `${start} - ${end}`;
+      }
+
+      // Build informative title
+      let signalTitle = '';
+      if (tier === 'major' || tier === 'significant') {
+        signalTitle = `Won ${formattedValue} contract from ${buyerName}`;
+      } else if (formattedValue) {
+        signalTitle = `Won ${formattedValue} contract: ${tenderTitle.slice(0, 60)}${tenderTitle.length > 60 ? '...' : ''}`;
+      } else {
+        signalTitle = `Won contract: ${tenderTitle.slice(0, 80)}${tenderTitle.length > 80 ? '...' : ''}`;
+      }
+
+      // Build informative detail - focus on context, not raw description
+      const detailParts: string[] = [];
+
+      // What the contract is for (clean up the description)
+      if (description) {
+        // Take first sentence or first 200 chars of description
+        const firstSentence = description.split(/[.!?]/)[0];
+        const cleanDesc = firstSentence.length > 200
+          ? firstSentence.slice(0, 200) + '...'
+          : firstSentence + '.';
+        if (cleanDesc.trim().length > 10) {
+          detailParts.push(cleanDesc.trim());
+        }
+      }
+
+      // Add key context - award date first (most important)
+      const contextParts: string[] = [];
+      if (awardDateStr) {
+        contextParts.push(`Awarded: ${awardDateStr}`);
+      }
+      if (buyerName && buyerName !== 'Unknown Buyer') {
+        contextParts.push(`By ${buyerName}`);
+      }
+      if (formattedValue) {
+        contextParts.push(`Value: ${formattedValue}`);
+      }
+      if (periodStr) {
+        contextParts.push(`Period: ${periodStr}`);
+      }
+      if (location) {
+        contextParts.push(`Location: ${location}`);
+      }
+
+      if (contextParts.length > 0) {
+        detailParts.push(contextParts.join(' • '));
+      }
+
+      const signalDetail = detailParts.join(' | ') || `Contract awarded by ${buyerName}`;
+
       signals.push({
         company_name: supplier.name,
         company_domain: extractDomainFromSupplier(release, supplier.name),
-        signal_title: `Won contract: ${tenderTitle}`,
-        signal_detail: description.slice(0, 500) + (description.length > 500 ? '...' : ''),
+        signal_title: signalTitle,
+        signal_detail: signalDetail,
         signal_url: `https://www.contractsfinder.service.gov.uk/Notice/${release.ocid}`,
         location,
         value: value || null,

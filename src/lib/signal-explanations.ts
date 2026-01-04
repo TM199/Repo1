@@ -15,7 +15,7 @@ export interface SignalExplanation {
 export const SIGNAL_EXPLANATIONS: Record<string, SignalExplanation> = {
   // Stale job signals - potentially abandoned listings
   stale_job_30: {
-    title: 'Possibly Stale - 30+ Days',
+    title: 'Possibly Abandoned (30 days)',
     whyItMatters:
       'This role has been open for over a month but hasn\'t been refreshed recently. The company may have paused hiring or forgotten to remove the listing.',
     actionAdvice:
@@ -23,7 +23,7 @@ export const SIGNAL_EXPLANATIONS: Record<string, SignalExplanation> = {
     urgencyLevel: 'low',
   },
   stale_job_60: {
-    title: 'Possibly Stale - 60+ Days',
+    title: 'Possibly Abandoned (60 days)',
     whyItMatters:
       'Two months open without recent activity. This listing may be abandoned, or the company has deprioritized this hire.',
     actionAdvice:
@@ -31,7 +31,7 @@ export const SIGNAL_EXPLANATIONS: Record<string, SignalExplanation> = {
     urgencyLevel: 'medium',
   },
   stale_job_90: {
-    title: 'Possibly Abandoned - 90+ Days',
+    title: 'Likely Abandoned (90 days)',
     whyItMatters:
       'Three months without refresh activity. This listing is likely abandoned or the company has given up on this role.',
     actionAdvice:
@@ -41,7 +41,7 @@ export const SIGNAL_EXPLANATIONS: Record<string, SignalExplanation> = {
 
   // Hard to fill signals - HIGH VALUE (actively recruiting)
   hard_to_fill_30: {
-    title: 'Hard to Fill - 30+ Days',
+    title: 'Actively Hiring 30+ Days',
     whyItMatters:
       'This role has been open for over a month AND the company is still actively promoting it. They\'re confirmed to be struggling - this is a hot lead.',
     actionAdvice:
@@ -49,7 +49,7 @@ export const SIGNAL_EXPLANATIONS: Record<string, SignalExplanation> = {
     urgencyLevel: 'medium',
   },
   hard_to_fill_60: {
-    title: 'Hard to Fill - 60+ Days',
+    title: 'Struggling to Hire 60+ Days',
     whyItMatters:
       'Two months of active recruiting with no hire. This company is confirmed to be struggling - they\'re still paying to promote this role. High-value pain signal.',
     actionAdvice:
@@ -57,7 +57,7 @@ export const SIGNAL_EXPLANATIONS: Record<string, SignalExplanation> = {
     urgencyLevel: 'high',
   },
   hard_to_fill_90: {
-    title: 'Hard to Fill - 90+ Days',
+    title: 'Desperate to Hire 90+ Days',
     whyItMatters:
       'Three months of active, ongoing recruitment. This is your BEST signal - confirmed, acute pain. The company is still spending money to fill this role after 90+ days.',
     actionAdvice:
@@ -67,7 +67,7 @@ export const SIGNAL_EXPLANATIONS: Record<string, SignalExplanation> = {
 
   // Repost signals
   job_reposted_once: {
-    title: 'Job Reposted',
+    title: 'Re-listed Role (1st attempt failed)',
     whyItMatters:
       'The job was taken down and reposted. This usually means their first hiring attempt failed - candidates dropped out, didn\'t pass interviews, or the hire didn\'t work out.',
     actionAdvice:
@@ -75,7 +75,7 @@ export const SIGNAL_EXPLANATIONS: Record<string, SignalExplanation> = {
     urgencyLevel: 'medium',
   },
   job_reposted_twice: {
-    title: 'Job Reposted Twice',
+    title: 'Re-listed Twice (2 failed attempts)',
     whyItMatters:
       'Two failed attempts to fill this role. The company is frustrated and likely questioning their approach. They may have made a bad hire that didn\'t work out.',
     actionAdvice:
@@ -83,7 +83,7 @@ export const SIGNAL_EXPLANATIONS: Record<string, SignalExplanation> = {
     urgencyLevel: 'high',
   },
   job_reposted_three_plus: {
-    title: 'Job Reposted 3+ Times',
+    title: 'Re-listed 3+ Times (desperate)',
     whyItMatters:
       'Multiple failed attempts signal a serious problem. Either they can\'t attract talent, their process is broken, or the role itself has issues. They\'re desperate.',
     actionAdvice:
@@ -93,7 +93,7 @@ export const SIGNAL_EXPLANATIONS: Record<string, SignalExplanation> = {
 
   // Salary increase signals
   salary_increase_10_percent: {
-    title: 'Salary Increased 10%+',
+    title: 'Salary Raised 10%+',
     whyItMatters:
       'They\'ve raised the salary to attract candidates. This means their original offer wasn\'t competitive and they\'re now paying a premium to fill the role.',
     actionAdvice:
@@ -101,7 +101,7 @@ export const SIGNAL_EXPLANATIONS: Record<string, SignalExplanation> = {
     urgencyLevel: 'medium',
   },
   salary_increase_20_percent: {
-    title: 'Salary Increased 20%+',
+    title: 'Salary Raised 20%+ (desperate)',
     whyItMatters:
       'A 20%+ salary increase is significant desperation. They\'ve been outbid by competitors and are now paying well above their original budget to attract talent.',
     actionAdvice:

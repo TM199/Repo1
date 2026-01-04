@@ -14,6 +14,7 @@ interface CompanyInput {
   companies_house_number?: string;
   location?: string;
   industry?: string;
+  is_likely_agency_pattern?: boolean;
 }
 
 interface Company {
@@ -186,6 +187,7 @@ export async function findOrCreateCompany(
       companies_house_number: input.companies_house_number,
       industry: input.industry,
       region: input.location,
+      is_likely_agency_pattern: input.is_likely_agency_pattern ?? null,
     })
     .select()
     .single();
@@ -198,6 +200,23 @@ export async function findOrCreateCompany(
     confidence: 100,
     company: newCompany as Company,
   };
+}
+
+/**
+ * Update company's agency pattern flag
+ */
+export async function updateCompanyAgencyPattern(
+  companyId: string,
+  isLikelyAgency: boolean
+): Promise<void> {
+  const supabase = createAdminClient();
+  // Only set to true, never downgrade from true to false via pattern matching
+  if (isLikelyAgency) {
+    await supabase
+      .from('companies')
+      .update({ is_likely_agency_pattern: true })
+      .eq('id', companyId);
+  }
 }
 
 /**

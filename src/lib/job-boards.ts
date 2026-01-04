@@ -433,6 +433,77 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * AI-powered recruitment agency detection (async)
+ * Use this for uncertain cases or when pattern matching is insufficient
+ */
+export async function isRecruitmentAgencyAsync(
+  companyName: string,
+  options?: {
+    domain?: string;
+    sicCodes?: string[];
+    jobDescription?: string;
+  }
+): Promise<{ isAgency: boolean; confidence: number; source: 'pattern' | 'ai' }> {
+  // Fast path: Check obvious patterns first (no API call)
+  if (isRecruitmentAgency(companyName, options?.jobDescription)) {
+    return { isAgency: true, confidence: 90, source: 'pattern' };
+  }
+
+  // AI classification for uncertain cases
+  const { classifyCompany } = await import('@/agents/agency-classifier-agent');
+  const result = await classifyCompany(companyName, {
+    domain: options?.domain,
+    sicCodes: options?.sicCodes,
+    useTools: true,
+  });
+
+  return {
+    isAgency: result.isRecruitmentAgency,
+    confidence: result.confidence,
+    source: 'ai',
+  };
+}
+
+/**
+ * Get job count from Reed API (count-only, uses 1 API call)
+ * Returns totalResults without fetching job data
+ */
+export async function getReedJobCount(keywords: string, location: string): Promise<number> {
+  const apiKey = process.env.REED_API_KEY;
+
+  if (!apiKey) {
+    console.warn('[job-boards] REED_API_KEY not configured');
+    return 0;
+  }
+
+  try {
+    const url = new URL(REED_API_URL);
+    url.searchParams.set('keywords', keywords);
+    url.searchParams.set('locationName', location);
+    url.searchParams.set('postedWithin', '60'); // Last 60 days
+    url.searchParams.set('resultsToTake', '1'); // Minimal fetch - just need count
+    url.searchParams.set('postedByDirectEmployer', 'true');
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: 'Basic ' + Buffer.from(`${apiKey}:`).toString('base64'),
+      },
+    });
+
+    if (!response.ok) {
+      console.error('[job-boards] Reed count error:', response.status);
+      return 0;
+    }
+
+    const data: ReedSearchResponse = await response.json();
+    return data.totalResults || 0;
+  } catch (error) {
+    console.error('[job-boards] getReedJobCount failed:', error);
+    return 0;
+  }
+}
+
 // ============================================
 // ENHANCED FUNCTIONS FOR V2.0 JOB INGESTION
 // ============================================

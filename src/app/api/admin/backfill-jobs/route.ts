@@ -16,7 +16,7 @@ import {
   isRecruitmentAgency,
   type ReedJob,
 } from '@/lib/job-boards';
-import { findOrCreateCompany } from '@/lib/companies/company-matcher';
+import { findOrCreateCompany, updateCompanyAgencyPattern } from '@/lib/companies/company-matcher';
 import {
   generateJobFingerprint,
   areJobsSimilar,
@@ -170,7 +170,7 @@ export async function GET(request: NextRequest) {
     jobs_created: 0,
     jobs_updated: 0,
     companies_created: 0,
-    agencies_skipped: 0,
+    agencies_flagged: 0,
     errors: [] as string[],
   };
 
@@ -218,10 +218,10 @@ export async function GET(request: NextRequest) {
     // Process each job
     for (const reedJob of allJobs) {
       try {
-        // Skip recruitment agencies
-        if (isRecruitmentAgency(reedJob.employerName, reedJob.jobDescription)) {
-          stats.agencies_skipped++;
-          continue;
+        // Flag agency pattern but still ingest (no skip)
+        const isLikelyAgency = isRecruitmentAgency(reedJob.employerName, reedJob.jobDescription);
+        if (isLikelyAgency) {
+          stats.agencies_flagged++;
         }
 
         // Find or create company
@@ -229,9 +229,15 @@ export async function GET(request: NextRequest) {
           name: reedJob.employerName,
           location: reedJob.locationName,
           industry: detectIndustryFromTitle(reedJob.jobTitle),
+          is_likely_agency_pattern: isLikelyAgency,
         });
 
-        if (match_type === 'new') stats.companies_created++;
+        if (match_type === 'new') {
+          stats.companies_created++;
+        } else if (isLikelyAgency) {
+          // Update existing company's agency flag
+          await updateCompanyAgencyPattern(company.id, true);
+        }
 
         // Generate fingerprint
         const fingerprint = generateJobFingerprint({

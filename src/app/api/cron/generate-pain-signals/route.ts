@@ -18,6 +18,11 @@ import {
   generateSignalTitle,
   generateSignalDetail,
 } from '@/lib/signals/detection';
+import {
+  detectMultipleOpenRoles,
+  detectDepartmentConcentration,
+} from '@/lib/signals/job-analysis-signals';
+import { getUrgencyBoost } from '@/lib/jobs/urgency-detector';
 import { ICPProfile } from '@/types';
 import { notifyICPOwner } from '@/lib/email';
 
@@ -73,6 +78,9 @@ export async function GET(request: NextRequest) {
     salary_increase_signals: 0,
     contract_signals: 0,
     referral_bonus_signals: 0,
+    multiple_open_roles_signals: 0,
+    department_concentration_signals: 0,
+    urgency_boosts_applied: 0,
     companies_scored: 0,
     skipped_no_icp: false,
     errors: [] as string[],
@@ -108,7 +116,7 @@ export async function GET(request: NextRequest) {
 
     const { data: staleJobs, error: staleError } = await supabase
       .from('job_postings')
-      .select('*, companies!inner(id, name)')
+      .select('*, companies!inner(id, name), urgency_level')
       .eq('is_active', true)
       .lte('original_posted_date', thirtyDaysAgo.toISOString().split('T')[0]);
 
@@ -165,6 +173,10 @@ export async function GET(request: NextRequest) {
             }
 
             if (shouldCreateSignal) {
+              // Sprint 3: Apply urgency boost
+              const urgencyBoost = getUrgencyBoost(job.urgency_level as 'high' | 'medium' | null);
+              const finalPainScore = painScore + urgencyBoost;
+
               await supabase.from('company_pain_signals').insert({
                 company_id: job.company_id,
                 icp_profile_id: icp.id,
@@ -181,8 +193,9 @@ export async function GET(request: NextRequest) {
                 ),
                 signal_value: daysOpen,
                 days_since_refresh: daysSinceRefresh,
-                pain_score_contribution: painScore,
+                pain_score_contribution: finalPainScore,
                 urgency,
+                metadata: urgencyBoost > 0 ? { urgency_boost: urgencyBoost, urgency_level: job.urgency_level } : null,
               });
 
               // Update stats
@@ -190,6 +203,9 @@ export async function GET(request: NextRequest) {
                 stats.hard_to_fill_signals++;
               } else {
                 stats.stale_signals++;
+              }
+              if (urgencyBoost > 0) {
+                stats.urgency_boosts_applied++;
               }
             }
           }
@@ -526,7 +542,110 @@ export async function GET(request: NextRequest) {
     }
 
     // ==========================================
-    // STEP 6: Recalculate Company Pain Scores
+    // STEP 6: Generate Multiple Open Roles Signals (Sprint 3)
+    // ==========================================
+    console.log('[generate-pain-signals] Checking for multiple open roles...');
+
+    // Get companies with active jobs
+    const { data: companiesWithJobs } = await supabase
+      .from('job_postings')
+      .select('company_id')
+      .eq('is_active', true);
+
+    if (companiesWithJobs) {
+      const uniqueCompanyIds = [...new Set(companiesWithJobs.map(j => j.company_id))];
+
+      for (const companyId of uniqueCompanyIds) {
+        try {
+          // Check multiple open roles
+          const multipleRolesSignal = await detectMultipleOpenRoles(companyId);
+          if (multipleRolesSignal) {
+            // Get company location for ICP matching
+            const { data: company } = await supabase
+              .from('companies')
+              .select('region')
+              .eq('id', companyId)
+              .single();
+
+            const matchingICPs = matchesICPLocations(company?.region || null, jobPainICPs);
+
+            for (const icp of matchingICPs) {
+              // Check if signal already exists
+              const { data: existingSignal } = await supabase
+                .from('company_pain_signals')
+                .select('id')
+                .eq('company_id', companyId)
+                .eq('icp_profile_id', icp.id)
+                .eq('pain_signal_type', 'multiple_open_roles')
+                .eq('is_active', true)
+                .single();
+
+              if (!existingSignal) {
+                await supabase.from('company_pain_signals').insert({
+                  company_id: companyId,
+                  icp_profile_id: icp.id,
+                  pain_signal_type: multipleRolesSignal.signal_type,
+                  signal_title: multipleRolesSignal.signal_title,
+                  signal_detail: multipleRolesSignal.signal_detail,
+                  signal_value: multipleRolesSignal.signal_value,
+                  pain_score_contribution: multipleRolesSignal.pain_score,
+                  urgency: multipleRolesSignal.urgency,
+                  confidence: multipleRolesSignal.confidence,
+                  metadata: multipleRolesSignal.metadata,
+                });
+                stats.multiple_open_roles_signals++;
+              }
+            }
+          }
+
+          // Check department concentration
+          const deptSignal = await detectDepartmentConcentration(companyId);
+          if (deptSignal) {
+            const { data: company } = await supabase
+              .from('companies')
+              .select('region')
+              .eq('id', companyId)
+              .single();
+
+            const matchingICPs = matchesICPLocations(company?.region || null, jobPainICPs);
+
+            for (const icp of matchingICPs) {
+              // Check if signal already exists
+              const { data: existingSignal } = await supabase
+                .from('company_pain_signals')
+                .select('id')
+                .eq('company_id', companyId)
+                .eq('icp_profile_id', icp.id)
+                .eq('pain_signal_type', 'department_hiring_concentration')
+                .eq('is_active', true)
+                .single();
+
+              if (!existingSignal) {
+                await supabase.from('company_pain_signals').insert({
+                  company_id: companyId,
+                  icp_profile_id: icp.id,
+                  pain_signal_type: deptSignal.signal_type,
+                  signal_title: deptSignal.signal_title,
+                  signal_detail: deptSignal.signal_detail,
+                  signal_value: deptSignal.signal_value,
+                  pain_score_contribution: deptSignal.pain_score,
+                  urgency: deptSignal.urgency,
+                  confidence: deptSignal.confidence,
+                  metadata: deptSignal.metadata,
+                });
+                stats.department_concentration_signals++;
+              }
+            }
+          }
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          stats.errors.push(`Company analysis ${companyId}: ${message}`);
+        }
+      }
+    }
+
+    // ==========================================
+    // STEP 7: Recalculate Company Pain Scores
     // ==========================================
     console.log('[generate-pain-signals] Recalculating pain scores...');
 
@@ -578,7 +697,7 @@ export async function GET(request: NextRequest) {
     }
 
     // ==========================================
-    // STEP 7: Deactivate resolved signals
+    // STEP 8: Deactivate resolved signals
     // ==========================================
     console.log('[generate-pain-signals] Deactivating resolved signals...');
 
@@ -602,11 +721,12 @@ export async function GET(request: NextRequest) {
     console.log('[generate-pain-signals] Pain signal generation complete');
 
     // ==========================================
-    // STEP 8: Send email notifications to ICP owners
+    // STEP 9: Send email notifications to ICP owners
     // ==========================================
     const totalNewSignals = stats.hard_to_fill_signals + stats.stale_signals +
       stats.repost_signals + stats.salary_increase_signals +
-      stats.referral_bonus_signals + stats.contract_signals;
+      stats.referral_bonus_signals + stats.contract_signals +
+      stats.multiple_open_roles_signals + stats.department_concentration_signals;
 
     if (totalNewSignals > 0) {
       console.log(`[generate-pain-signals] Sending notifications for ${totalNewSignals} new signals...`);

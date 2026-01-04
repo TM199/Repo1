@@ -42,28 +42,28 @@ export function SourceCard({ source }: SourceCardProps) {
   }
 
   return (
-    <Card className="bg-white border-[#E3E8EE] shadow-sm hover:shadow-md transition-all duration-200 group">
+    <Card className="bg-card border-border shadow-sm hover:shadow-md transition-all duration-200 group">
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-2">
-              <h3 className="font-semibold text-[#0A2540] text-sm">{source.name}</h3>
+              <h3 className="font-semibold text-foreground text-sm">{source.name}</h3>
               <Badge
                 variant="outline"
                 className={`text-[10px] font-medium px-2 py-0.5 border-0 ${
                   source.is_active
                     ? 'bg-[#D1FAE5] text-[#047857]'
-                    : 'bg-[#F0F3F7] text-[#6B7C93]'
+                    : 'bg-[#F0F3F7] text-muted-foreground'
                 }`}
               >
                 {source.is_active ? 'Active' : 'Paused'}
               </Badge>
             </div>
-            <p className="text-xs text-[#6B7C93] truncate mb-3 font-mono">
+            <p className="text-xs text-muted-foreground truncate mb-3 font-mono">
               {source.url}
             </p>
-            <div className="flex items-center gap-4 text-[11px] text-[#6B7C93]">
-              <span className="capitalize px-2 py-0.5 bg-[#F6F9FC] rounded text-[#425466] font-medium">
+            <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+              <span className="capitalize px-2 py-0.5 bg-muted rounded text-muted-foreground font-medium">
                 {source.signal_type.replace('_', ' ')}
               </span>
               <span className="flex items-center gap-1">
@@ -89,7 +89,7 @@ export function SourceCard({ source }: SourceCardProps) {
               size="icon"
               onClick={handleScrape}
               disabled={scraping}
-              className="h-8 w-8 text-[#6B7C93] hover:text-[#635BFF] hover:bg-[#EEF2FF]"
+              className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10"
             >
               {scraping ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -101,7 +101,7 @@ export function SourceCard({ source }: SourceCardProps) {
               href={source.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="h-8 w-8 rounded-md flex items-center justify-center text-[#6B7C93] hover:text-[#0A2540] hover:bg-[#F6F9FC] transition-colors"
+              className="h-8 w-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             >
               <ExternalLink className="h-4 w-4" />
             </a>
@@ -109,7 +109,7 @@ export function SourceCard({ source }: SourceCardProps) {
               variant="ghost"
               size="icon"
               onClick={handleDelete}
-              className="h-8 w-8 text-[#6B7C93] hover:text-[#CD3D64] hover:bg-[#FEE2E2]"
+              className="h-8 w-8 text-muted-foreground hover:text-[#CD3D64] hover:bg-[#FEE2E2]"
             >
               <Trash2 className="h-4 w-4" />
             </Button>

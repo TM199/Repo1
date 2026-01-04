@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pricing | Mentis Digital</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-primary: #0f172a;
+            --color-primary-light: #1e293b;
+            --color-accent: #06b6d4;
+            --color-accent-dark: #4338ca;
+            --color-highlight: #0891b2;
+            --color-surface: #1e293b;
+            --color-border: rgba(255, 255, 255, 0.1);
+            --color-text: #ffffff;
+            --color-text-muted: rgba(255, 255, 255, 0.6);
+            --color-text-subtle: rgba(255, 255, 255, 0.4);
+            --gradient-brand: linear-gradient(135deg, #4338ca 0%, #06b6d4 100%);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--color-primary);
+            color: var(--color-text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* Header */
+        header {
+            padding: 24px 0;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo img {
+            height: 40px;
+            width: auto;
+        }
+
+        .logo-text {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-weight: 700;
+            font-size: 22px;
+            background: var(--gradient-brand);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .nav-link {
+            color: var(--color-text-muted);
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+
+        .nav-link:hover {
+            color: var(--color-accent);
+        }
+
+        /* Hero */
+        .hero {
+            padding: 80px 0 40px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -300px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(6, 182, 212, 0.1) 0%, rgba(67, 56, 202, 0.05) 50%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .hero h1 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: clamp(36px, 5vw, 52px);
+            font-weight: 700;
+            margin-bottom: 16px;
+            position: relative;
+        }
+
+        .hero p {
+            font-size: 18px;
+            color: var(--color-text-muted);
+            max-width: 650px;
+            margin: 0 auto;
+        }
+
+        /* Section Headers */
+        .section-header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        .section-label {
+            display: inline-block;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            background: var(--gradient-brand);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 12px;
+        }
+
+        .section-header h2 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .section-header p {
+            font-size: 16px;
+            color: var(--color-text-muted);
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        /* Signal Mentis Section */
+        .signal-mentis-section {
+            padding: 60px 0;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        .sm-pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 768px) {
+            .sm-pricing-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Signal Mentis Cards */
+        .sm-card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 16px;
+            padding: 32px 24px;
+            position: relative;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .sm-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .sm-card.featured {
+            border-color: var(--color-accent);
+            background: linear-gradient(180deg, rgba(6, 182, 212, 0.08) 0%, var(--color-surface) 100%);
+        }
+
+        .sm-card .tier-name {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .sm-card .price {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 36px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .sm-card .price span {
+            font-size: 16px;
+            font-weight: 400;
+            color: var(--color-text-muted);
+        }
+
+        .sm-card .price-note {
+            font-size: 13px;
+            color: var(--color-text-subtle);
+            margin-bottom: 24px;
+        }
+
+        .sm-card .features-list {
+            list-style: none;
+            margin-bottom: 24px;
+        }
+
+        .sm-card .features-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-size: 14px;
+            color: var(--color-text-muted);
+            padding: 6px 0;
+        }
+
+        .sm-card .features-list li::before {
+            content: '✓';
+            color: var(--color-accent);
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .sm-card .features-list li.disabled {
+            color: var(--color-text-subtle);
+        }
+
+        .sm-card .features-list li.disabled::before {
+            content: '—';
+            color: var(--color-text-subtle);
+        }
+
+        .badge {
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--gradient-brand);
+            color: white;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            padding: 6px 16px;
+            border-radius: 20px;
+        }
+
+        /* DFY Section */
+        .dfy-section {
+            padding: 80px 0;
+        }
+
+        .dfy-pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .dfy-pricing-grid.three-col {
+            grid-template-columns: repeat(3, 1fr);
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 1024px) {
+            .dfy-pricing-grid,
+            .dfy-pricing-grid.three-col {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .dfy-pricing-grid,
+            .dfy-pricing-grid.three-col {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* DFY Cards */
+        .dfy-card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 16px;
+            padding: 28px 20px;
+            position: relative;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .dfy-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .dfy-card.featured {
+            border-color: var(--color-accent);
+            background: linear-gradient(180deg, rgba(6, 182, 212, 0.08) 0%, var(--color-surface) 100%);
+        }
+
+        .dfy-card .engine-badge {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            background: var(--gradient-brand);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .dfy-card .tier-name {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        .dfy-card .tier-desc {
+            font-size: 13px;
+            color: var(--color-text-muted);
+            text-align: center;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .dfy-card .result-badge {
+            margin-top: 20px;
+            padding: 10px 16px;
+            background: rgba(6, 182, 212, 0.1);
+            border: 1px solid rgba(6, 182, 212, 0.2);
+            border-radius: 8px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--color-accent);
+        }
+
+        .price-block {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--color-border);
+            margin-bottom: 16px;
+        }
+
+        .price-label {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--color-text-subtle);
+            margin-bottom: 4px;
+        }
+
+        .price-value {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 28px;
+            font-weight: 700;
+        }
+
+        .price-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+        }
+
+        .price-row-label {
+            font-size: 13px;
+            color: var(--color-text-muted);
+        }
+
+        .price-row-value {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .dfy-card .features-list {
+            list-style: none;
+            margin-top: 20px;
+        }
+
+        .dfy-card .features-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--color-text-muted);
+            padding: 5px 0;
+        }
+
+        .dfy-card .features-list li::before {
+            content: '';
+            width: 5px;
+            height: 5px;
+            background: var(--color-accent);
+            border-radius: 50%;
+            margin-top: 7px;
+            flex-shrink: 0;
+        }
+
+        /* Software Costs Section */
+        .software-section {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 16px;
+            padding: 28px;
+            margin-top: 40px;
+        }
+
+        .software-section h3 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        .software-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .software-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--color-text-muted);
+        }
+
+        .software-item::before {
+            content: '✓';
+            color: var(--color-accent);
+            font-weight: 600;
+        }
+
+        /* How It Works */
+        .how-it-works {
+            padding: 80px 0;
+            border-top: 1px solid var(--color-border);
+        }
+
+        .steps-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 40px;
+            margin-top: 48px;
+        }
+
+        @media (max-width: 768px) {
+            .steps-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .step {
+            text-align: center;
+        }
+
+        .step-number {
+            width: 48px;
+            height: 48px;
+            background: var(--gradient-brand);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-weight: 700;
+            font-size: 20px;
+            margin: 0 auto 16px;
+        }
+
+        .step h4 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .step p {
+            font-size: 14px;
+            color: var(--color-text-muted);
+        }
+
+        /* CTA */
+        .cta-section {
+            padding: 60px 0 80px;
+            text-align: center;
+        }
+
+        .cta-box {
+            background: var(--gradient-brand);
+            border-radius: 20px;
+            padding: 48px;
+        }
+
+        .cta-box h3 {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .cta-box p {
+            font-size: 16px;
+            opacity: 0.9;
+            margin-bottom: 24px;
+        }
+
+        .cta-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: white;
+            color: var(--color-primary);
+            font-weight: 600;
+            font-size: 16px;
+            padding: 16px 32px;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+
+        .cta-button svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--color-border);
+            padding: 32px 0;
+            text-align: center;
+        }
+
+        footer p {
+            font-size: 14px;
+            color: var(--color-text-subtle);
+        }
+
+        footer a {
+            color: var(--color-accent);
+            text-decoration: none;
+        }
+
+        /* Logo SVG */
+        .logo-svg {
+            height: 36px;
+            width: auto;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="logo">
+                    <!-- Mentis Logo SVG -->
+                    <svg class="logo-svg" viewBox="0 0 120 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                            <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                <stop offset="0%" style="stop-color:#4338ca"/>
+                                <stop offset="100%" style="stop-color:#06b6d4"/>
+                            </linearGradient>
+                        </defs>
+                        <!-- M shape -->
+                        <path d="M8 38V18C8 12.5 12.5 8 18 8C23.5 8 28 12.5 28 18V24C28 26 29.5 28 32 28C34.5 28 36 26 36 24V18C36 12.5 40.5 8 46 8C51.5 8 56 12.5 56 18V38"
+                              stroke="url(#logoGradient)" stroke-width="6" stroke-linecap="round" fill="none"/>
+                    </svg>
+                    <span class="logo-text">Mentis Digital</span>
+                </div>
+                <a href="https://mentisdigital.co.uk" class="nav-link">mentisdigital.co.uk</a>
+            </div>
+        </div>
+    </header>
+
+    <section class="hero">
+        <div class="container">
+            <h1>Simple, Transparent Pricing</h1>
+            <p>From self-serve lead intelligence to fully managed BD automation. Choose what fits your agency.</p>
+        </div>
+    </section>
+
+    <!-- Signal Mentis SaaS Section -->
+    <section class="signal-mentis-section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-label">Signal Mentis</span>
+                <h2>Lead Intelligence Platform</h2>
+                <p>Find companies with hiring pain before your competitors. Self-serve access to pain signals and contact data.</p>
+            </div>
+
+            <div class="sm-pricing-grid">
+                <!-- Free -->
+                <div class="sm-card">
+                    <h3 class="tier-name">Free</h3>
+                    <p class="price">£0</p>
+                    <p class="price-note">Forever free</p>
+                    <ul class="features-list">
+                        <li>1 ICP profile</li>
+                        <li>View pain signals</li>
+                        <li>Basic company data</li>
+                        <li class="disabled">No contact enrichment</li>
+                        <li class="disabled">No export</li>
+                        <li class="disabled">No CRM integration</li>
+                    </ul>
+                </div>
+
+                <!-- Starter -->
+                <div class="sm-card featured">
+                    <span class="badge">Best Value</span>
+                    <h3 class="tier-name">Starter</h3>
+                    <p class="price">£99<span>/month</span></p>
+                    <p class="price-note">+ enrichment credits</p>
+                    <ul class="features-list">
+                        <li>3 ICP profiles</li>
+                        <li>All pain signal types</li>
+                        <li>100 contact enrichments/mo</li>
+                        <li>CSV export</li>
+                        <li>Email notifications</li>
+                        <li class="disabled">No CRM integration</li>
+                    </ul>
+                </div>
+
+                <!-- Pro -->
+                <div class="sm-card">
+                    <h3 class="tier-name">Pro</h3>
+                    <p class="price">£249<span>/month</span></p>
+                    <p class="price-note">+ enrichment credits</p>
+                    <ul class="features-list">
+                        <li>10 ICP profiles</li>
+                        <li>All pain signal types</li>
+                        <li>500 contact enrichments/mo</li>
+                        <li>CSV export</li>
+                        <li>HubSpot integration</li>
+                        <li>Priority support</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Done-For-You Section -->
+    <section class="dfy-section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-label">Done-For-You</span>
+                <h2>Automation Systems</h2>
+                <p>We build, integrate, and manage systems that transform how your agency operates.</p>
+            </div>
+
+            <div class="dfy-pricing-grid three-col">
+                <!-- Growth Engine -->
+                <div class="dfy-card">
+                    <div class="engine-badge">Growth Engine</div>
+                    <h3 class="tier-name">Client Acquisition</h3>
+                    <p class="tier-desc">Automated BD that books qualified meetings while you focus on delivery.</p>
+                    <div class="price-block">
+                        <p class="price-label">Upfront Build</p>
+                        <p class="price-value">£3,500</p>
+                    </div>
+                    <div class="price-row">
+                        <span class="price-row-label">Software/mo</span>
+                        <span class="price-row-value">£1,000</span>
+                    </div>
+                    <div class="price-row">
+                        <span class="price-row-label">Retainer/mo</span>
+                        <span class="price-row-value">£500</span>
+                    </div>
+                    <ul class="features-list">
+                        <li>Signal Mentis Pro included</li>
+                        <li>Buying signal detection</li>
+                        <li>Multichannel outreach sequences</li>
+                        <li>CRM integration</li>
+                        <li>Monthly optimization</li>
+                    </ul>
+                    <div class="result-badge">4→18 meetings/week</div>
+                </div>
+
+                <!-- Operations Engine -->
+                <div class="dfy-card">
+                    <div class="engine-badge">Operations Engine</div>
+                    <h3 class="tier-name">Workflow Automation</h3>
+                    <p class="tier-desc">Eliminate admin. Give your consultants 15+ hours back every week.</p>
+                    <div class="price-block">
+                        <p class="price-label">Upfront Build</p>
+                        <p class="price-value">£5,000</p>
+                    </div>
+                    <div class="price-row">
+                        <span class="price-row-label">Software/mo</span>
+                        <span class="price-row-value">£300</span>
+                    </div>
+                    <div class="price-row">
+                        <span class="price-row-label">Retainer/mo</span>
+                        <span class="price-row-value">£500</span>
+                    </div>
+                    <ul class="features-list">
+                        <li>CRM optimization (Bullhorn, Vincere, JobAdder)</li>
+                        <li>Automated CV formatting</li>
+                        <li>Interview & reference workflows</li>
+                        <li>Compliance automation</li>
+                        <li>Real-time dashboards</li>
+                    </ul>
+                    <div class="result-badge">15+ hours saved/week</div>
+                </div>
+
+                <!-- Full GTM Engine -->
+                <div class="dfy-card featured">
+                    <span class="badge">Complete Solution</span>
+                    <div class="engine-badge">Full GTM Engine</div>
+                    <h3 class="tier-name">End-to-End Growth</h3>
+                    <p class="tier-desc">Client acquisition + operations + candidate attraction. The complete system.</p>
+                    <div class="price-block">
+                        <p class="price-label">Upfront Build</p>
+                        <p class="price-value">£15,000+</p>
+                    </div>
+                    <div class="price-row">
+                        <span class="price-row-label">Software/mo</span>
+                        <span class="price-row-value">£2,000</span>
+                    </div>
+                    <div class="price-row">
+                        <span class="price-row-label">Retainer/mo</span>
+                        <span class="price-row-value">£1,500</span>
+                    </div>
+                    <ul class="features-list">
+                        <li>Everything in Growth Engine</li>
+                        <li>Everything in Operations Engine</li>
+                        <li>Candidate nurturing workflows</li>
+                        <li>LinkedIn authority building</li>
+                        <li>Quarterly strategy sessions</li>
+                    </ul>
+                    <div class="result-badge">70% time on revenue</div>
+                </div>
+            </div>
+
+            <!-- Software Costs Explanation -->
+            <div class="software-section">
+                <h3>What's Included in Software Costs</h3>
+                <div class="software-grid">
+                    <div class="software-item">Signal Mentis Pro</div>
+                    <div class="software-item">LeadMagic / Prospeo</div>
+                    <div class="software-item">Instantly / Smartlead</div>
+                    <div class="software-item">LinkedIn automation</div>
+                    <div class="software-item">CRM integrations</div>
+                    <div class="software-item">All data costs</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="how-it-works">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-label">The Process</span>
+                <h2>How It Works</h2>
+            </div>
+
+            <div class="steps-grid">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h4>Try Signal Mentis</h4>
+                    <p>See companies with hiring pain in your niche. Understand the opportunity before committing.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h4>We Build Your System</h4>
+                    <p>Custom outreach sequences, CRM integration, and automation tailored to your agency.</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h4>You Take Meetings</h4>
+                    <p>We run and optimize everything. Your team just shows up to qualified conversations.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta-section">
+        <div class="container">
+            <div class="cta-box">
+                <h3>Ready to automate your BD?</h3>
+                <p>Start with Signal Mentis free, or book a call to discuss done-for-you.</p>
+                <a href="https://mentisdigital.co.uk" class="cta-button">
+                    Book a Call
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p><a href="https://mentisdigital.co.uk">mentisdigital.co.uk</a></p>
+        </div>
+    </footer>
+</body>
+</html>

@@ -19,7 +19,7 @@ import {
   filterByEmploymentType,
 } from '@/lib/job-boards';
 import { getRoleSearchTerms } from '@/lib/role-variations';
-import { findOrCreateCompany } from '@/lib/companies/company-matcher';
+import { findOrCreateCompany, updateCompanyAgencyPattern } from '@/lib/companies/company-matcher';
 import {
   generateJobFingerprint,
   areJobsSimilar,
@@ -40,9 +40,7 @@ import {
   generateSignalTitle,
   generateSignalDetail
 } from '@/lib/signals/detection';
-import { queueExpansionTasks } from '@/lib/scan-queue';
 import { notifyICPOwner } from '@/lib/email';
-import { randomUUID } from 'crypto';
 
 // Industry detection from job titles
 const INDUSTRY_PATTERNS: Record<string, RegExp[]> = {
@@ -129,7 +127,6 @@ export async function POST(
     signals_generated: 0,
     contracts_found: 0,
     contracts_matched: 0,
-    expansion_tasks_queued: 0,
     errors: [] as string[],
   };
 
@@ -192,14 +189,12 @@ export async function POST(
     }> = [];
     const seenJobIds = new Set<number>();
 
-    // Build search keywords from roles (top 2 variations per role)
+    // Build search keywords from ALL role variations (no queueing - do immediately)
     const searchKeywords: string[] = [];
-    const searchedRoles: string[] = [];
     for (const role of roles.slice(0, 5)) {
       const searchTerms = getRoleSearchTerms(role);
-      // Use top 2 variations
-      searchKeywords.push(...searchTerms.slice(0, 2));
-      searchedRoles.push(...searchTerms.slice(0, 2));
+      // Use ALL variations for comprehensive search
+      searchKeywords.push(...searchTerms);
     }
 
     // Parallel search across all locations with multiple keywords
@@ -248,10 +243,8 @@ export async function POST(
     // Process each job
     for (const reedJob of filteredJobs) {
       try {
-        // Skip recruitment agencies
-        if (isRecruitmentAgency(reedJob.employerName, reedJob.jobDescription)) {
-          continue;
-        }
+        // Flag agency pattern but still ingest (no skip)
+        const isLikelyAgency = isRecruitmentAgency(reedJob.employerName, reedJob.jobDescription);
 
         // Detect industry from job title
         const detectedIndustry = detectIndustryFromTitle(reedJob.jobTitle);
@@ -261,10 +254,14 @@ export async function POST(
           name: reedJob.employerName,
           location: reedJob.locationName,
           industry: detectedIndustry,
+          is_likely_agency_pattern: isLikelyAgency,
         });
 
         if (match_type === 'new') {
           stats.companies_created++;
+        } else if (isLikelyAgency) {
+          // Update existing company's agency flag
+          await updateCompanyAgencyPattern(company.id, true);
         }
 
         // Generate fingerprint
@@ -509,10 +506,10 @@ export async function POST(
       const keywords = icpProfile.contract_keywords || [];
       const targetLocations = new Set(icpProfile.locations.map(l => l.toLowerCase()));
 
-      // Fetch from Contracts Finder (7 days back for initial scan)
+      // Fetch from Contracts Finder (30 days back for initial scan)
       if (icpProfile.signal_types.includes('contracts_awarded')) {
         try {
-          const { signals: contractSignals } = await fetchContractAwards(7);
+          const { signals: contractSignals } = await fetchContractAwards(30);
           stats.contracts_found += contractSignals.length;
 
           for (const signal of contractSignals) {
@@ -568,10 +565,10 @@ export async function POST(
         }
       }
 
-      // Fetch from Find a Tender (7 days back)
+      // Fetch from Find a Tender (30 days back for initial scan)
       if (icpProfile.signal_types.includes('tenders')) {
         try {
-          const { signals: tenderSignals } = await fetchFTSAwards(7);
+          const { signals: tenderSignals } = await fetchFTSAwards(30);
           stats.contracts_found += tenderSignals.length;
 
           for (const signal of tenderSignals) {
@@ -629,49 +626,25 @@ export async function POST(
       console.log(`[ICP Scan] Contracts: ${stats.contracts_found} found, ${stats.contracts_matched} matched ICP criteria`);
     }
 
-    // Queue expansion tasks for background processing
-    // This will search additional role variations and expanded locations
-    const batchId = randomUUID();
-    const allRoleVariations = roles.flatMap(role => getRoleSearchTerms(role));
-    const remainingRoles = allRoleVariations.filter(r => !searchedRoles.includes(r));
-
-    if (remainingRoles.length > 0 || searchLocations.length < UK_NATIONAL_LOCATIONS.length) {
-      try {
-        const tasksQueued = await queueExpansionTasks(
-          adminClient,
-          id,
-          batchId,
-          remainingRoles,
-          searchedRoles,
-          locations,
-          searchLocations
-        );
-        stats.expansion_tasks_queued = tasksQueued;
-        console.log(`[ICP Scan] Queued ${tasksQueued} expansion tasks for background processing`);
-      } catch (err) {
-        console.error('[ICP Scan] Error queuing expansion tasks:', err);
-      }
-    }
-
-    // Update profile last_synced_at, scan_status, and scan_progress
+    // Update profile last_synced_at and scan_status (no more expansion queueing)
     await supabase
       .from('icp_profiles')
       .update({
         last_synced_at: new Date().toISOString(),
-        scan_status: stats.expansion_tasks_queued > 0 ? 'expanding' : 'completed',
-        scan_batch_id: stats.expansion_tasks_queued > 0 ? batchId : null,
+        scan_status: 'completed',
+        scan_batch_id: null,
         scan_progress: {
           jobs_found: stats.jobs_processed,
           companies_found: stats.companies_created,
           signals_generated: stats.signals_generated,
-          tasks_pending: stats.expansion_tasks_queued,
+          tasks_pending: 0,
           tasks_completed: 0,
           last_updated: new Date().toISOString(),
         },
       })
       .eq('id', id);
 
-    console.log(`[ICP Scan] Complete. Jobs: ${stats.jobs_processed}, Contracts: ${stats.contracts_matched}, Signals: ${stats.signals_generated}, Expansion: ${stats.expansion_tasks_queued} tasks`);
+    console.log(`[ICP Scan] Complete. Jobs: ${stats.jobs_processed}, Contracts: ${stats.contracts_matched}, Signals: ${stats.signals_generated}`);
 
     // Send email notification if signals were generated
     if (stats.signals_generated > 0) {
@@ -686,7 +659,6 @@ export async function POST(
     return NextResponse.json({
       success: true,
       stats,
-      expandingInBackground: stats.expansion_tasks_queued > 0,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';

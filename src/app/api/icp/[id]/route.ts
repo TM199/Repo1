@@ -113,6 +113,26 @@ export async function DELETE(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // First, mark the ICP as inactive to stop new tasks
+  await supabase
+    .from('icp_profiles')
+    .update({ is_active: false })
+    .eq('id', id)
+    .eq('user_id', user.id);
+
+  // Cancel any pending scan_queue tasks for this ICP
+  const { error: queueError } = await supabase
+    .from('scan_queue')
+    .update({ status: 'cancelled' })
+    .eq('icp_profile_id', id)
+    .in('status', ['pending', 'queued']);
+
+  if (queueError) {
+    console.log('[ICP API] Note: Could not cancel queue tasks:', queueError.message);
+    // Continue with deletion even if queue update fails (table may not exist)
+  }
+
+  // Now delete the ICP profile (cascades to pain signals)
   const { error } = await supabase
     .from('icp_profiles')
     .delete()

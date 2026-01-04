@@ -598,6 +598,13 @@ export async function sendSignalNotifications(
       if (success) {
         sent++;
         console.log(`Sent ${frequency} digest to ${userEmail} (${count} signals)`);
+
+        // Mark signals as no longer new to prevent duplicate notifications
+        await supabase
+          .from('signals')
+          .update({ is_new: false })
+          .eq('user_id', userId)
+          .eq('is_new', true);
       } else {
         failed++;
         console.error(`Failed to send ${frequency} digest to ${userEmail}`);

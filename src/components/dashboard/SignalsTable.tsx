@@ -121,7 +121,7 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex items-center justify-between">
-        <span className="text-sm text-[#6B7C93]">
+        <span className="text-sm text-muted-foreground">
           {selectedIds.size > 0 ? `${selectedIds.size} selected` : `${signals.length} signals`}
         </span>
         {selectedIds.size > 0 && (
@@ -129,7 +129,7 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
             variant="outline"
             size="sm"
             onClick={handleExportSelected}
-            className="border-[#E3E8EE] text-[#0A2540] hover:bg-[#F6F9FC]"
+            className="border-border text-foreground hover:bg-background"
           >
             <Download className="h-4 w-4 mr-2" />
             Export Selected
@@ -138,10 +138,10 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
       </div>
 
       {/* Table */}
-      <div className="border border-[#E3E8EE] rounded-lg overflow-hidden">
+      <div className="border border-border rounded-lg overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow className="bg-[#F6F9FC]">
+            <TableRow className="bg-background">
               <TableHead className="w-10">
                 <Checkbox
                   checked={selectedIds.size === signals.length && signals.length > 0}
@@ -149,27 +149,27 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
                 />
               </TableHead>
               <TableHead
-                className="cursor-pointer hover:text-[#0A2540]"
+                className="cursor-pointer hover:text-foreground"
                 onClick={() => handleSort('company_name')}
               >
                 Company <SortIcon field="company_name" />
               </TableHead>
               <TableHead
-                className="cursor-pointer hover:text-[#0A2540]"
+                className="cursor-pointer hover:text-foreground"
                 onClick={() => handleSort('signal_type')}
               >
                 Signal Type <SortIcon field="signal_type" />
               </TableHead>
               <TableHead>Title</TableHead>
               <TableHead
-                className="cursor-pointer hover:text-[#0A2540]"
+                className="cursor-pointer hover:text-foreground"
                 onClick={() => handleSort('location')}
               >
                 Location <SortIcon field="location" />
               </TableHead>
               <TableHead>Contacts</TableHead>
               <TableHead
-                className="cursor-pointer hover:text-[#0A2540]"
+                className="cursor-pointer hover:text-foreground"
                 onClick={() => handleSort('detected_at')}
               >
                 Detected <SortIcon field="detected_at" />
@@ -179,18 +179,18 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
           </TableHeader>
           <TableBody>
             {sortedSignals.map((signal) => (
-              <TableRow key={signal.id} className="hover:bg-[#F6F9FC]">
+              <TableRow key={signal.id} className="hover:bg-background">
                 <TableCell>
                   <Checkbox
                     checked={selectedIds.has(signal.id)}
                     onCheckedChange={() => toggleOne(signal.id)}
                   />
                 </TableCell>
-                <TableCell className="font-medium text-[#0A2540]">
+                <TableCell className="font-medium text-foreground">
                   <div>
                     {signal.company_name || 'Unknown'}
                     {signal.company_domain && (
-                      <span className="block text-xs text-[#6B7C93]">
+                      <span className="block text-xs text-muted-foreground">
                         {signal.company_domain}
                       </span>
                     )}
@@ -209,20 +209,20 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
                     {signal.signal_title}
                   </span>
                 </TableCell>
-                <TableCell className="text-[#6B7C93]">
+                <TableCell className="text-muted-foreground">
                   {signal.location || '-'}
                 </TableCell>
                 <TableCell>
                   {signal.contacts && signal.contacts.length > 0 ? (
                     <div className="flex items-center gap-1 text-xs">
-                      <Users className="h-3.5 w-3.5 text-[#635BFF]" />
-                      <span className="text-[#0A2540]">{signal.contacts.length}</span>
+                      <Users className="h-3.5 w-3.5 text-primary" />
+                      <span className="text-foreground">{signal.contacts.length}</span>
                     </div>
                   ) : (
-                    <span className="text-[#6B7C93]">-</span>
+                    <span className="text-muted-foreground">-</span>
                   )}
                 </TableCell>
-                <TableCell className="text-[#6B7C93] text-sm">
+                <TableCell className="text-muted-foreground text-sm">
                   {new Date(signal.detected_at).toLocaleDateString()}
                 </TableCell>
                 <TableCell>
@@ -231,7 +231,7 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
                       href={signal.signal_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-[#635BFF] hover:text-[#5046E4]"
+                      className="text-primary hover:text-primary/80"
                     >
                       <ExternalLink className="h-4 w-4" />
                     </a>
@@ -244,7 +244,7 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
       </div>
 
       {signals.length === 0 && (
-        <div className="text-center py-8 text-[#6B7C93]">
+        <div className="text-center py-8 text-muted-foreground">
           No signals found
         </div>
       )}

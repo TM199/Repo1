@@ -45,12 +45,12 @@ export function StatsCards({ totalSignals, newSignals, totalSources }: StatsCard
         const TrendIcon = stat.trend === 'up' ? ArrowUpRight : stat.trend === 'down' ? ArrowDownRight : null;
 
         return (
-          <Card key={i} className="bg-white border-[#E3E8EE] shadow-sm hover:shadow-md transition-shadow">
+          <Card key={i} className="bg-card border-border shadow-sm hover:shadow-md transition-shadow">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs font-medium text-[#6B7C93] mb-1">{stat.label}</p>
-                  <p className="text-2xl font-bold text-[#0A2540] tracking-tight">{stat.value}</p>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">{stat.label}</p>
+                  <p className="text-2xl font-bold text-foreground tracking-tight">{stat.value}</p>
                   {TrendIcon && (
                     <div className="flex items-center gap-1 mt-1">
                       <TrendIcon
@@ -63,7 +63,7 @@ export function StatsCards({ totalSignals, newSignals, totalSources }: StatsCard
                       >
                         {stat.change}
                       </span>
-                      <span className="text-xs text-[#6B7C93]">vs last week</span>
+                      <span className="text-xs text-muted-foreground">vs last week</span>
                     </div>
                   )}
                 </div>

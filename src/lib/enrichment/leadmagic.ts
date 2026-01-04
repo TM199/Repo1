@@ -4,6 +4,7 @@ export interface LeadMagicContact {
   last_name: string;
   profile_url: string; // LinkedIn URL
   company_name: string;
+  company_website: string | null; // Domain returned by LeadMagic
 }
 
 export async function findContactByRole(
@@ -30,5 +31,12 @@ export async function findContactByRole(
   const data = await response.json();
   if (data.message !== 'Role Found') return null;
 
-  return data;
+  return {
+    name: data.name,
+    first_name: data.first_name,
+    last_name: data.last_name,
+    profile_url: data.profile_url,
+    company_name: data.company_name,
+    company_website: data.company_website || null,
+  };
 }

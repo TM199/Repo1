@@ -1,4 +1,14 @@
+import { Suspense } from 'react';
 import { CompaniesInPainDashboard } from '@/components/dashboard/CompaniesInPainDashboard';
+
+function LoadingState() {
+  return (
+    <div className="flex items-center justify-center p-12">
+      <div className="animate-spin h-6 w-6 border-2 border-[#635BFF] border-t-transparent rounded-full" />
+      <span className="ml-2 text-[#425466]">Loading companies in pain...</span>
+    </div>
+  );
+}
 
 export default function PainDashboardPage() {
   return (
@@ -10,7 +20,9 @@ export default function PainDashboardPage() {
         </p>
       </div>
 
-      <CompaniesInPainDashboard />
+      <Suspense fallback={<LoadingState />}>
+        <CompaniesInPainDashboard />
+      </Suspense>
     </div>
   );
 }
