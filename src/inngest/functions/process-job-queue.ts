@@ -186,7 +186,7 @@ export const processJobQueueFunction = inngest.createFunction(
         const jobs = await searchReedMultipleKeywords({
           keywords: [task.keywords],
           locations: [task.location],
-          postedWithin: 30, // Fetch last 30 days
+          postedWithin: 60, // Fetch last 60 days (minimum requirement)
           directEmployerOnly: true,
           limitPerSearch: 200,
         });
@@ -195,7 +195,7 @@ export const processJobQueueFunction = inngest.createFunction(
         const jobs = await searchAdzunaMultipleKeywords({
           keywords: [task.keywords],
           locations: [task.location],
-          maxDaysOld: 30,
+          maxDaysOld: 60, // Fetch last 60 days (minimum requirement)
         });
         return { source: 'adzuna', jobs };
       }
