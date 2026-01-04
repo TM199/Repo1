@@ -149,14 +149,84 @@ export async function POST(
       console.warn('[ICP Scan] Failed to trigger worker (will process on schedule):', inngestError);
     }
 
+    // Build detailed user-friendly message
+    const estimatedHours = Math.ceil((tasksToCreate.length * 20) / 60);
+    const estimatedCompletionTime = new Date(Date.now() + estimatedHours * 60 * 60 * 1000);
+    const completionTimeFormatted = estimatedCompletionTime.toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+
+    // Build search summary
+    const searchSummary = {
+      job_boards: {
+        enabled: true,
+        sources: ['Reed.co.uk', 'Adzuna'],
+        searches: `${roles.length} roles × ${locations.length} locations`,
+        total_searches: tasksToCreate.length,
+        history_window: '60 days',
+        roles_being_searched: roles.slice(0, 5), // Show first 5 roles
+        locations_being_searched: locations,
+      },
+      contracts_and_tenders: {
+        enabled: icpProfile.signal_types.includes('contracts_awarded') || icpProfile.signal_types.includes('tenders'),
+        contracts_finder: icpProfile.signal_types.includes('contracts_awarded'),
+        find_a_tender: icpProfile.signal_types.includes('tenders'),
+        note: icpProfile.signal_types.includes('contracts_awarded') || icpProfile.signal_types.includes('tenders')
+          ? 'Contract signals are generated separately and will appear alongside job signals'
+          : 'Enable contracts_awarded or tenders signal types to receive contract signals',
+      },
+      timeline: {
+        first_signals_expected: '~20 minutes',
+        full_completion_expected: `~${estimatedHours} hours (by ${completionTimeFormatted})`,
+        processing_frequency: 'Every 20 minutes',
+        total_tasks: tasksToCreate.length,
+      },
+    };
+
+    const userMessage = `
+🔍 **Search Initiated for "${icpProfile.name}"**
+
+**Job Board Searches (60 days of history)**
+• Sources: Reed.co.uk & Adzuna
+• Roles: ${roles.slice(0, 3).join(', ')}${roles.length > 3 ? ` + ${roles.length - 3} more` : ''}
+• Locations: ${locations.join(', ')}
+• Total searches: ${tasksToCreate.length} (${roles.length} roles × ${locations.length} locations × 2 sources)
+
+${searchSummary.contracts_and_tenders.enabled ? `
+**Government Contracts & Tenders**
+• ${icpProfile.signal_types.includes('contracts_awarded') ? '✓ Contracts Finder' : '✗ Contracts Finder'}
+• ${icpProfile.signal_types.includes('tenders') ? '✓ Find a Tender' : '✗ Find a Tender'}
+• These signals are generated separately from job signals
+` : ''}
+
+**Timeline**
+• First signals: ~20 minutes
+• New signals every: 20 minutes
+• Full completion: ~${estimatedHours} hours (by ${completionTimeFormatted})
+
+**What to Expect**
+Each search will find jobs and automatically generate pain signals for:
+✓ Jobs open 30+ days (hard to fill)
+✓ Jobs open 60+ days (very hard to fill)
+✓ Reposted roles (failed hiring attempts)
+✓ Salary increases (desperation signals)
+✓ Referral bonuses (struggling to hire)
+
+You'll see signals appearing in your dashboard as each search completes. No need to refresh - they'll appear automatically!
+    `.trim();
+
     return NextResponse.json({
       success: true,
-      message: `Queued ${tasksToCreate.length} tasks for processing. Jobs will be fetched over the next few hours.`,
+      message: userMessage,
+      summary: searchSummary,
       stats: {
         tasks_queued: tasksToCreate.length,
         roles: roles.length,
         locations: locations.length,
-        estimated_completion_minutes: tasksToCreate.length * 20, // 20 mins per task
+        estimated_completion_hours: estimatedHours,
+        estimated_completion_time: estimatedCompletionTime.toISOString(),
       },
     });
   } catch (error: unknown) {
