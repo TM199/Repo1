@@ -1,66 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Signal, SignalContact } from '@/types';
-import { ExternalLink, Clock, UserPlus, Mail, Phone, Linkedin, Loader2, Check, X, RefreshCw, AlertCircle, ShieldCheck, Upload, Globe } from 'lucide-react';
+import { ExternalLink, Loader2, AlertCircle, Upload } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { calculateConfidenceScore, getConfidenceLabelColor } from '@/lib/signal-scoring';
+import { calculateConfidenceScore } from '@/lib/signal-scoring';
+import { SignalCardHeader } from './SignalCardHeader';
+import { SignalEnrichmentDialog, EnrichmentProgressPanel, EnrichmentStep, AgencyClassification } from './SignalEnrichmentDialog';
+import { ContactsList } from './ContactsList';
 
 interface SignalCardProps {
   signal: Signal & { contacts?: SignalContact[] };
 }
-
-interface EnrichmentStep {
-  role: string;
-  status: 'pending' | 'searching' | 'found' | 'not_found' | 'getting_email' | 'getting_phone' | 'complete';
-  name?: string;
-  email?: string;
-  emailStatus?: string;
-}
-
-// Human-readable status messages
-const statusMessages: Record<string, { label: string; api?: string }> = {
-  pending: { label: 'Queued' },
-  searching: { label: 'Finding contact...', api: 'LeadMagic' },
-  found: { label: 'Contact found' },
-  not_found: { label: 'Not found' },
-  getting_email: { label: 'Finding email...', api: 'Prospeo' },
-  getting_phone: { label: 'Finding phone...', api: 'Prospeo' },
-  complete: { label: 'Complete' },
-};
-
-const signalTypeLabels: Record<string, string> = {
-  new_job: 'Hiring',
-  planning_submitted: 'Planning',
-  planning_approved: 'Approved',
-  contract_awarded: 'Contract',
-  funding_announced: 'Funding',
-  leadership_change: 'Leadership',
-  cqc_rating_change: 'CQC',
-  company_expansion: 'Expansion',
-};
-
-const signalTypeStyles: Record<string, { bg: string; text: string }> = {
-  new_job: { bg: '#EEF2FF', text: '#4338CA' },
-  planning_submitted: { bg: '#FEF3C7', text: '#B45309' },
-  planning_approved: { bg: '#D1FAE5', text: '#047857' },
-  contract_awarded: { bg: '#F3E8FF', text: '#7C3AED' },
-  funding_announced: { bg: '#FCE7F3', text: '#BE185D' },
-  leadership_change: { bg: '#FFEDD5', text: '#C2410C' },
-  cqc_rating_change: { bg: '#FEE2E2', text: '#B91C1C' },
-  company_expansion: { bg: '#CCFBF1', text: '#0F766E' },
-};
-
-const emailStatusColors: Record<string, { bg: string; text: string; icon: React.ReactNode }> = {
-  verified: { bg: '#D1FAE5', text: '#047857', icon: <Check className="h-2.5 w-2.5" /> },
-  valid: { bg: '#D1FAE5', text: '#047857', icon: <Check className="h-2.5 w-2.5" /> },
-  risky: { bg: '#FEE2E2', text: '#B91C1C', icon: <AlertCircle className="h-2.5 w-2.5" /> },
-  invalid: { bg: '#FEE2E2', text: '#B91C1C', icon: <X className="h-2.5 w-2.5" /> },
-  unknown: { bg: '#F0F3F7', text: '#6B7C93', icon: null },
-};
 
 // Check if a string is an IP address (not a valid domain for display)
 function isIPAddress(str: string | null | undefined): boolean {
@@ -75,25 +36,107 @@ function getDisplayDomain(domain: string | null | undefined): string | null {
 }
 
 export function SignalCard({ signal }: SignalCardProps) {
-  const style = signalTypeStyles[signal.signal_type] || { bg: '#F0F3F7', text: '#425466' };
   const [enriching, setEnriching] = useState(false);
   const displayDomain = getDisplayDomain(signal.company_domain);
   const [contacts, setContacts] = useState<SignalContact[]>(signal.contacts || []);
   const [enrichmentSteps, setEnrichmentSteps] = useState<EnrichmentStep[]>([]);
   const [enrichmentPhase, setEnrichmentPhase] = useState<string>('');
   const [pushingToHubSpot, setPushingToHubSpot] = useState(false);
+  const [showRolePicker, setShowRolePicker] = useState(false);
+  const [selectedRoles, setSelectedRoles] = useState<string[]>(['CEO', 'Founder', 'Head of Talent', 'Hiring Manager']);
+  const [agencyStatus, setAgencyStatus] = useState<AgencyClassification | null>(null);
+  const [classifying, setClassifying] = useState(false);
+  const [showAgencyWarning, setShowAgencyWarning] = useState(false);
+  const [pendingEnrichRoles, setPendingEnrichRoles] = useState<string[] | null>(null);
+
+  // Fetch user's default roles on mount
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data.default_enrichment_roles?.length > 0) {
+          setSelectedRoles(data.default_enrichment_roles);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Fetch agency classification status for this company
+  useEffect(() => {
+    if (!signal.company_name) return;
+    fetch(`/api/companies/classify?company_name=${encodeURIComponent(signal.company_name)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.found && data.classification) {
+          setAgencyStatus(data.classification);
+        }
+      })
+      .catch(() => {});
+  }, [signal.company_name]);
 
   // Calculate confidence score
   const confidenceScore = calculateConfidenceScore(signal);
-  const confidenceColor = getConfidenceLabelColor(confidenceScore.label);
 
-  const handleEnrich = async () => {
+  // Handle agency classification
+  const handleClassify = async () => {
+    if (!signal.company_name) return;
+    setClassifying(true);
+    try {
+      const response = await fetch('/api/companies/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          company_name: signal.company_name,
+          company_domain: signal.company_domain,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setAgencyStatus({
+          isRecruitmentAgency: data.result.isRecruitmentAgency,
+          confidence: data.result.confidence,
+          reasoning: data.result.reasoning,
+          domain: data.result.domain,
+          domainSource: 'ai_tavily',
+        });
+        toast.success(
+          data.result.isRecruitmentAgency
+            ? 'Classified as recruitment agency'
+            : 'Classified as NOT a recruitment agency'
+        );
+      } else {
+        throw new Error(data.error || 'Classification failed');
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Classification failed');
+    } finally {
+      setClassifying(false);
+    }
+  };
+
+  // Check agency status before enriching
+  const handleEnrichWithAgencyCheck = (roles?: string[]) => {
+    const rolesToUse = roles || selectedRoles;
+    // If company is classified as agency, show warning
+    if (agencyStatus?.isRecruitmentAgency === true) {
+      setPendingEnrichRoles(rolesToUse);
+      setShowAgencyWarning(true);
+      setShowRolePicker(false);
+    } else {
+      handleEnrich(rolesToUse);
+    }
+  };
+
+  const handleEnrich = async (roles?: string[]) => {
+    const rolesToUse = roles || selectedRoles;
+    setShowRolePicker(false);
     setEnriching(true);
     setEnrichmentSteps([]);
     setEnrichmentPhase('Connecting...');
 
     try {
-      const response = await fetch(`/api/signals/${signal.id}/enrich/stream`);
+      const rolesParam = encodeURIComponent(rolesToUse.join(','));
+      const response = await fetch(`/api/signals/${signal.id}/enrich/stream?roles=${rolesParam}`);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -218,116 +261,45 @@ export function SignalCard({ signal }: SignalCardProps) {
   };
 
   return (
-    <Card className={`bg-white border-[#E3E8EE] shadow-sm hover:shadow-md transition-all duration-200 group ${signal.is_new ? 'ring-2 ring-[#635BFF]/20 ring-offset-2' : ''}`}>
+    <Card className={`bg-card border-border shadow-sm hover:shadow-md transition-all duration-200 group ${signal.is_new ? 'ring-2 ring-primary/20 ring-offset-2' : ''}`}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-2">
-              <Badge
-                className="text-[10px] font-medium px-2 py-0.5 border-0"
-                style={{ backgroundColor: style.bg, color: style.text }}
-              >
-                {signalTypeLabels[signal.signal_type] || signal.signal_type}
-              </Badge>
-              <Badge
-                className="text-[10px] font-medium px-2 py-0.5 border-0"
-                style={{
-                  backgroundColor: signal.source_type === 'search' ? '#CFFAFE' : '#F0F3F7',
-                  color: signal.source_type === 'search' ? '#0E7490' : '#425466'
-                }}
-              >
-                {signal.source_type === 'search' ? 'AI Search' : 'URL Monitor'}
-              </Badge>
-              <span
-                className={`flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded ${confidenceColor}`}
-                title={`Confidence: ${confidenceScore.total}/100 (Source: ${confidenceScore.sourceScore}/40, Domain: ${confidenceScore.domainScore}/30, Data: ${confidenceScore.completenessScore}/30)`}
-              >
-                <ShieldCheck className="h-3 w-3" />
-                {confidenceScore.label}
-              </span>
-              {signal.is_new && (
-                <span className="flex items-center gap-1 text-[10px] font-medium text-[#635BFF]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#635BFF] animate-pulse" />
-                  New
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 mb-0.5">
-              <h3 className="font-semibold text-[#0A2540] text-sm truncate">
-                {signal.company_name || 'Unknown Company'}
-              </h3>
-              {displayDomain && (
-                <a
-                  href={`https://${displayDomain}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-[10px] text-[#6B7C93] hover:text-[#635BFF] transition-colors shrink-0"
-                  title={`Visit ${displayDomain}`}
-                >
-                  <Globe className="h-3 w-3" />
-                  <span className="hidden sm:inline">{displayDomain}</span>
-                </a>
-              )}
-            </div>
-            <p className="text-sm text-[#425466] truncate mb-1">
-              {signal.signal_title}
-            </p>
-            {signal.signal_detail && (
-              <p className="text-xs text-[#6B7C93] line-clamp-2 mb-2">
-                {signal.signal_detail}
-              </p>
-            )}
-            <div className="flex items-center gap-3 text-[11px] text-[#6B7C93]">
-              <span className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                {new Date(signal.detected_at).toLocaleDateString()}
-              </span>
-              {signal.source?.name && (
-                <>
-                  <span className="text-[#E3E8EE]">•</span>
-                  <span className="truncate">{signal.source.name}</span>
-                </>
-              )}
-            </div>
-          </div>
+          {/* Header Section */}
+          <SignalCardHeader
+            signal={signal}
+            agencyStatus={agencyStatus}
+            confidenceScore={confidenceScore}
+            displayDomain={displayDomain}
+          />
+
+          {/* Action Buttons */}
           <div className="flex flex-col gap-2 flex-shrink-0">
             {signal.signal_url && (
               <a
                 href={signal.signal_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-8 h-8 rounded-lg bg-[#F6F9FC] flex items-center justify-center text-[#6B7C93] hover:bg-[#635BFF] hover:text-white transition-colors"
+                className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-muted-foreground hover:bg-primary hover:text-primary-foreground transition-colors"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
               </a>
             )}
-            {!hasContacts && !enriching && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleEnrich}
-                disabled={enriching}
-                className="h-8 px-2 text-xs"
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {hasContacts && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={handleEnrich}
-                disabled={enriching}
-                className="h-8 px-2 text-xs text-[#6B7C93]"
-                title="Re-enrich contacts"
-              >
-                {enriching ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            )}
+            <SignalEnrichmentDialog
+              signalId={signal.id}
+              showRolePicker={showRolePicker}
+              setShowRolePicker={setShowRolePicker}
+              selectedRoles={selectedRoles}
+              setSelectedRoles={setSelectedRoles}
+              enriching={enriching}
+              enrichmentSteps={enrichmentSteps}
+              enrichmentPhase={enrichmentPhase}
+              onEnrich={handleEnrichWithAgencyCheck}
+              onClassify={handleClassify}
+              classifying={classifying}
+              agencyStatus={agencyStatus}
+              companyName={signal.company_name || ''}
+              hasContacts={hasContacts}
+            />
             <Button
               size="sm"
               variant="ghost"
@@ -347,169 +319,60 @@ export function SignalCard({ signal }: SignalCardProps) {
 
         {/* Enrichment Progress Panel */}
         {enriching && (
-          <div className="mt-3 pt-3 border-t border-[#E3E8EE]">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[10px] font-medium text-[#6B7C93]">ENRICHING CONTACTS</p>
-              {enrichmentSteps.length > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <Loader2 className="w-3 h-3 text-[#635BFF] animate-spin" />
-                  <span className="text-[10px] text-[#635BFF] font-medium">
-                    {enrichmentSteps.filter(s => s.status === 'complete').length}/{enrichmentSteps.length}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Current phase message */}
-            {enrichmentPhase && (
-              <div className="flex items-center gap-2 mb-3 px-2 py-1.5 bg-[#635BFF]/5 rounded-md">
-                <Loader2 className="w-3 h-3 text-[#635BFF] animate-spin flex-shrink-0" />
-                <p className="text-[11px] text-[#635BFF] font-medium truncate">
-                  {enrichmentPhase}
-                </p>
-              </div>
-            )}
-
-            {/* Steps list - only show if we have steps */}
-            {enrichmentSteps.length === 0 && (
-              <div className="flex items-center gap-2 py-4 justify-center">
-                <Loader2 className="w-4 h-4 text-[#635BFF] animate-spin" />
-                <span className="text-xs text-[#6B7C93]">Initializing...</span>
-              </div>
-            )}
-            <div className="space-y-2">
-              {enrichmentSteps.map((step) => {
-                const statusInfo = statusMessages[step.status] || { label: step.status };
-                const isActive = ['searching', 'getting_email', 'getting_phone'].includes(step.status);
-
-                return (
-                  <div key={step.role} className={`p-2 rounded-lg ${isActive ? 'bg-[#F6F9FC] border border-[#635BFF]/20' : 'bg-transparent'}`}>
-                    <div className="flex items-center gap-2 text-xs">
-                      {step.status === 'pending' && (
-                        <span className="w-4 h-4 rounded-full border border-[#E3E8EE] flex items-center justify-center text-[#6B7C93]">
-                          <span className="w-1 h-1 rounded-full bg-[#6B7C93]" />
-                        </span>
-                      )}
-                      {isActive && (
-                        <Loader2 className="w-4 h-4 text-[#635BFF] animate-spin" />
-                      )}
-                      {step.status === 'complete' && (
-                        <span className="w-4 h-4 rounded-full bg-[#D1FAE5] flex items-center justify-center text-[#047857]">
-                          <Check className="h-2.5 w-2.5" />
-                        </span>
-                      )}
-                      {step.status === 'not_found' && (
-                        <span className="w-4 h-4 rounded-full bg-[#FEE2E2] flex items-center justify-center text-[#B91C1C]">
-                          <X className="h-2.5 w-2.5" />
-                        </span>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <span className={step.status === 'not_found' ? 'text-[#6B7C93] line-through' : 'text-[#0A2540] font-medium'}>
-                          {step.name || step.role}
-                        </span>
-                      </div>
-                      {statusInfo.api && isActive && (
-                        <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-[#635BFF]/10 text-[#635BFF]">
-                          {statusInfo.api}
-                        </span>
-                      )}
-                    </div>
-                    {isActive && (
-                      <p className="text-[10px] text-[#6B7C93] mt-1 ml-6">
-                        {statusInfo.label}
-                      </p>
-                    )}
-                    {step.status === 'not_found' && (
-                      <p className="text-[10px] text-[#B91C1C] mt-1 ml-6">
-                        No {step.role} found at this company
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <EnrichmentProgressPanel
+            enrichmentSteps={enrichmentSteps}
+            enrichmentPhase={enrichmentPhase}
+          />
         )}
 
         {/* Contacts Display */}
         {hasContacts && !enriching && (
-          <div className="mt-3 pt-3 border-t border-[#E3E8EE]">
-            <p className="text-[10px] font-medium text-[#6B7C93] mb-2">CONTACTS</p>
-            <div className="space-y-2">
-              {contacts.map((contact) => {
-                const emailStatus = emailStatusColors[contact.email_status || 'unknown'] || emailStatusColors.unknown;
-                return (
-                  <div key={contact.id} className="flex items-center justify-between gap-2 text-xs">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="font-medium text-[#0A2540] truncate">{contact.full_name}</p>
-                        {contact.seniority && contact.seniority !== 'unknown' && (
-                          <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-                            contact.seniority === 'executive' ? 'bg-purple-100 text-purple-700' :
-                            contact.seniority === 'senior' ? 'bg-blue-100 text-blue-700' :
-                            contact.seniority === 'manager' ? 'bg-green-100 text-green-700' :
-                            'bg-gray-100 text-gray-600'
-                          }`}>
-                            {contact.seniority}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[#6B7C93] truncate">{contact.job_title}</p>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {contact.email ? (
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(contact.email!);
-                            toast.success('Email copied to clipboard');
-                          }}
-                          className="h-6 px-1.5 rounded flex items-center gap-1 hover:opacity-80 transition-opacity cursor-pointer"
-                          style={{ backgroundColor: emailStatus.bg, color: emailStatus.text }}
-                          title={`Click to copy: ${contact.email}`}
-                        >
-                          <Mail className="h-3 w-3" />
-                          {emailStatus.icon}
-                        </button>
-                      ) : (
-                        <span className="h-6 px-1.5 rounded flex items-center gap-1 bg-[#FEE2E2] text-[#B91C1C] text-[9px]">
-                          <Mail className="h-3 w-3" />
-                          <X className="h-2.5 w-2.5" />
-                        </span>
-                      )}
-                      {contact.phone ? (
-                        <button
-                          onClick={() => {
-                            navigator.clipboard.writeText(contact.phone!);
-                            toast.success('Phone copied to clipboard');
-                          }}
-                          className="w-6 h-6 rounded bg-[#D1FAE5] flex items-center justify-center text-[#047857] hover:opacity-80 transition-opacity cursor-pointer"
-                          title={`Click to copy: ${contact.phone}`}
-                        >
-                          <Phone className="h-3 w-3" />
-                        </button>
-                      ) : (
-                        <span className="w-6 h-6 rounded bg-[#FEE2E2] flex items-center justify-center text-[#B91C1C]" title="Phone not found">
-                          <Phone className="h-3 w-3" />
-                        </span>
-                      )}
-                      {contact.linkedin_url && (
-                        <a
-                          href={contact.linkedin_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="w-6 h-6 rounded bg-[#F6F9FC] flex items-center justify-center text-[#6B7C93] hover:bg-[#0A66C2] hover:text-white transition-colors"
-                          title="LinkedIn Profile"
-                        >
-                          <Linkedin className="h-3 w-3" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <ContactsList contacts={contacts} />
         )}
+
+        {/* Agency Warning Dialog */}
+        <Dialog open={showAgencyWarning} onOpenChange={setShowAgencyWarning}>
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-amber-500" />
+                Recruitment Agency Detected
+              </DialogTitle>
+              <DialogDescription asChild>
+                <div>
+                  <strong>{signal.company_name}</strong> is classified as a recruitment agency
+                  ({agencyStatus?.confidence}% confidence).
+                  <br /><br />
+                  Enrichment may return contacts who are recruiters rather than decision-makers
+                  at your target companies.
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowAgencyWarning(false);
+                  setPendingEnrichRoles(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  setShowAgencyWarning(false);
+                  if (pendingEnrichRoles) {
+                    handleEnrich(pendingEnrichRoles);
+                  }
+                  setPendingEnrichRoles(null);
+                }}
+                className="bg-amber-500 hover:bg-amber-600 text-white"
+              >
+                Enrich Anyway
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </CardContent>
     </Card>
   );
