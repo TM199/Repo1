@@ -89,6 +89,7 @@ export default function NewICPProfilePage() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Form state
@@ -305,11 +306,21 @@ export default function NewICPProfilePage() {
       setIsSubmitting(false);
       setIsScanning(true);
 
-      // Trigger scan in background (don't wait for completion)
-      fetch(`/api/icp/${profileId}/scan`, { method: 'POST' })
-        .catch(err => console.error('Scan trigger error:', err));
+      // Trigger scan and get detailed feedback
+      try {
+        const scanResponse = await fetch(`/api/icp/${profileId}/scan`, { method: 'POST' });
+        const scanData = await scanResponse.json();
 
-      // Redirect immediately to ICP detail page to show live progress
+        if (scanData.success && scanData.message) {
+          setScanMessage(scanData.message);
+          console.log('[ICP Scan Started]', scanData.message);
+          console.log('[Scan Summary]', scanData.summary);
+        }
+      } catch (err) {
+        console.error('Scan trigger error:', err);
+      }
+
+      // Redirect to ICP detail page to show live progress
       setTimeout(() => {
         router.push(`/icp/${profileId}`);
       }, 1500);
@@ -322,20 +333,26 @@ export default function NewICPProfilePage() {
 
   if (isScanning) {
     return (
-      <div className="max-w-xl mx-auto mt-20">
+      <div className="max-w-2xl mx-auto mt-8">
         <Card className="bg-white border-[#E3E8EE]">
-          <CardContent className="py-12 text-center">
-            <Loader2 className="h-12 w-12 text-[#635BFF] mx-auto mb-4 animate-spin" />
-            <h2 className="text-xl font-bold text-[#0A2540] mb-2">
-              Starting Scan
-            </h2>
-            <p className="text-sm text-[#6B7C93] mb-4">
-              Taking you to your profile to see live results...
-            </p>
-            <div className="flex justify-center gap-2 text-xs text-[#6B7C93]">
-              <Badge variant="outline">{locations.length} locations</Badge>
-              <Badge variant="outline">{specificRoles.length} roles</Badge>
+          <CardContent className="py-8">
+            <div className="text-center mb-6">
+              <Loader2 className="h-12 w-12 text-[#635BFF] mx-auto mb-4 animate-spin" />
+              <h2 className="text-xl font-bold text-[#0A2540] mb-2">
+                Scan Initiated
+              </h2>
+              <p className="text-sm text-[#6B7C93]">
+                Taking you to your profile to see live results...
+              </p>
             </div>
+
+            {scanMessage && (
+              <div className="mt-6 p-4 bg-[#F6F9FC] rounded-lg border border-[#E3E8EE]">
+                <pre className="text-xs text-[#0A2540] whitespace-pre-wrap font-sans leading-relaxed">
+                  {scanMessage}
+                </pre>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
