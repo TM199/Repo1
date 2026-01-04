@@ -136,6 +136,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // CRITICAL: Get user's ICP profiles to filter companies
+  const { data: icpProfiles } = await supabase
+    .from('icp_profiles')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('is_active', true);
+
+  const userIcpIds = (icpProfiles || []).map(icp => icp.id);
+
+  // Don't allow export if user has no ICP profiles
+  if (userIcpIds.length === 0) {
+    return NextResponse.json({
+      error: 'No ICP profiles found. Create an ICP profile first.',
+    }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   const format = searchParams.get('format') || 'csv';
   const minPainScore = parseInt(searchParams.get('minPainScore') || '0');
@@ -146,6 +162,7 @@ export async function GET(request: NextRequest) {
   const adminSupabase = createAdminClient();
 
   // Build query with pagination
+  // CRITICAL: Filter by user's ICP profiles using !inner join
   let query = adminSupabase
     .from('companies')
     .select(`
@@ -159,16 +176,19 @@ export async function GET(request: NextRequest) {
       location,
       total_pain_score,
       last_enriched_at,
-      company_pain_signals(
+      company_pain_signals!inner(
         pain_signal_type,
         signal_title,
         pain_score_contribution,
         urgency,
         job_url,
-        detected_at
+        detected_at,
+        icp_profile_id
       )
     `, { count: 'exact' })
     .gte('total_pain_score', minPainScore)
+    .in('company_pain_signals.icp_profile_id', userIcpIds)
+    .eq('company_pain_signals.is_active', true)
     .order('total_pain_score', { ascending: false })
     .range(offset, offset + limit - 1);
 

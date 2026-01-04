@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 
 // GET /api/icp/[id] - Get single ICP profile
 export async function GET(
@@ -143,6 +143,10 @@ export async function DELETE(
     console.error('[ICP API] Error deleting profile:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Note: Companies are now user-specific and persist even when ICPs are deleted.
+  // Users may recreate ICP profiles and want their existing companies back.
+  // Companies are only deleted when the user account is deleted (CASCADE).
 
   return NextResponse.json({ success: true });
 }

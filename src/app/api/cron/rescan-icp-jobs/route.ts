@@ -243,11 +243,8 @@ export async function GET() {
                 // NEW job - check if it's a repost
                 const detectedIndustry = detectIndustryFromTitle(reedJob.jobTitle);
 
-                const { company } = await findOrCreateCompany({
-                  name: reedJob.employerName,
-                  location: reedJob.locationName || '',
-                  industry: detectedIndustry,
-                });
+                // NOTE: Companies now created in signal generation (per user)
+                // This route is deprecated - use Inngest rescan-icp-jobs function instead
 
                 // Check for similar inactive jobs (repost detection)
                 let repostCount = 0;
@@ -256,7 +253,7 @@ export async function GET() {
                 const { data: similarJobs } = await supabase
                   .from('job_postings')
                   .select('*')
-                  .eq('company_id', company.id)
+                  .eq('employer_name_from_source', reedJob.employerName)
                   .eq('is_active', false)
                   .order('last_seen_at', { ascending: false })
                   .limit(10);
@@ -266,7 +263,7 @@ export async function GET() {
                     if (
                       areJobsSimilar(
                         { title: reedJob.jobTitle, company_name: reedJob.employerName, location: reedJob.locationName || '' },
-                        { title: oldJob.title, company_name: company.name, location: oldJob.location || '' }
+                        { title: oldJob.title, company_name: reedJob.employerName, location: oldJob.location || '' }
                       )
                     ) {
                       previousPostingId = oldJob.id;
@@ -289,7 +286,7 @@ export async function GET() {
                 const { data: newJob, error: insertError } = await supabase
                   .from('job_postings')
                   .insert({
-                    company_id: company.id,
+                    company_id: null, // Companies created per-user in signal generation
                     reed_job_id: reedJob.jobUrl.match(/\/job\/(\d+)/)?.[1] || String(reedJob.jobId),
                     fingerprint,
                     title: reedJob.jobTitle,
@@ -320,25 +317,8 @@ export async function GET() {
 
                 stats.new_jobs++;
 
-                // Generate pain signals (with ICP profile ID)
-                if (newJob) {
-                  const { signals_generated } = await generateJobPainSignals(
-                    supabase,
-                    {
-                      id: newJob.id,
-                      title: newJob.title,
-                      location: newJob.location || '',
-                      original_posted_date: newJob.original_posted_date,
-                      repost_count: newJob.repost_count || 0,
-                      salary_increase_from_previous: null,
-                      mentions_referral_bonus: newJob.mentions_referral_bonus || false,
-                      referral_bonus_amount: newJob.referral_bonus_amount,
-                    },
-                    company,
-                    { icpProfileId: icpProfile.id }
-                  );
-                  stats.signals_created += signals_generated;
-                }
+                // Signal generation removed - now handled by generate-pain-signals Inngest function
+                // which creates user-specific companies per ICP profile
               }
             } catch (jobError) {
               const msg = jobError instanceof Error ? jobError.message : 'Unknown error';

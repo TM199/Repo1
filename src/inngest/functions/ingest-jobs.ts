@@ -18,14 +18,12 @@ import { activityLogger } from '@/lib/activity-logger';
 import { getRemainingCalls, checkAndIncrementApiUsage } from '@/lib/rate-limiter';
 import {
   searchReedMultipleKeywords,
-  isRecruitmentAgency,
 } from '@/lib/job-boards';
 import {
   searchAdzunaMultipleKeywords,
   mapAdzunaCategoryToIndustry,
   parseAdzunaDate,
 } from '@/lib/adzuna';
-import { findOrCreateCompany, updateCompanyAgencyPattern } from '@/lib/companies/company-matcher';
 import {
   generateJobFingerprint,
   areJobsSimilar,
@@ -294,7 +292,6 @@ export const ingestJobsFunction = inngest.createFunction(
 
           for (const reedJob of reedJobs) {
             try {
-              const isLikelyAgency = isRecruitmentAgency(reedJob.employerName, reedJob.jobDescription);
               const detectedIndustry = detectIndustryFromTitle(reedJob.jobTitle);
 
               // Skip if industry doesn't match ICP (unless "Other")
@@ -304,19 +301,8 @@ export const ingestJobsFunction = inngest.createFunction(
                 continue;
               }
 
-              // Find or create company
-              const { company, match_type } = await findOrCreateCompany({
-                name: reedJob.employerName,
-                location: reedJob.locationName,
-                industry: detectedIndustry,
-                is_likely_agency_pattern: isLikelyAgency,
-              });
-
-              if (match_type === 'new') {
-                localStats.companies++;
-              } else if (isLikelyAgency) {
-                await updateCompanyAgencyPattern(company.id, true);
-              }
+              // Note: Companies are now created in signal generation (per user)
+              // Job postings are shared across all users (public API data)
 
               // Generate fingerprint
               const fingerprint = generateJobFingerprint({
@@ -344,7 +330,7 @@ export const ingestJobsFunction = inngest.createFunction(
                 continue;
               }
 
-              // Check for reposts
+              // Check for reposts (using employer name instead of company_id)
               let previousPostingId: string | null = null;
               let salaryIncrease: number | null = null;
               let repostCount = 0;
@@ -352,7 +338,7 @@ export const ingestJobsFunction = inngest.createFunction(
               const { data: similarJobs } = await supabase
                 .from('job_postings')
                 .select('*')
-                .eq('company_id', company.id)
+                .eq('employer_name_from_source', reedJob.employerName)
                 .eq('is_active', false)
                 .order('last_seen_at', { ascending: false })
                 .limit(10);
@@ -361,7 +347,7 @@ export const ingestJobsFunction = inngest.createFunction(
                 for (const oldJob of similarJobs) {
                   if (areJobsSimilar(
                     { title: reedJob.jobTitle, company_name: reedJob.employerName, location: reedJob.locationName },
-                    { title: oldJob.title, company_name: company.name, location: oldJob.location || '' }
+                    { title: oldJob.title, company_name: reedJob.employerName, location: oldJob.location || '' }
                   )) {
                     previousPostingId = oldJob.id;
                     repostCount = (oldJob.repost_count || 0) + 1;
@@ -390,7 +376,7 @@ export const ingestJobsFunction = inngest.createFunction(
 
               // Insert new job
               await supabase.from('job_postings').insert({
-                company_id: company.id,
+                company_id: null, // Companies created per-user in signal generation
                 reed_job_id: String(reedJob.jobId),
                 fingerprint,
                 title: reedJob.jobTitle,
@@ -468,7 +454,6 @@ export const ingestJobsFunction = inngest.createFunction(
                 continue;
               }
 
-              const isLikelyAgency = isRecruitmentAgency(adzunaJob.company.display_name, adzunaJob.description);
               const detectedIndustry = adzunaJob.category?.tag
                 ? mapAdzunaCategoryToIndustry(adzunaJob.category.tag)
                 : detectIndustryFromTitle(adzunaJob.title);
@@ -479,19 +464,8 @@ export const ingestJobsFunction = inngest.createFunction(
                 continue;
               }
 
-              // Find or create company
-              const { company, match_type } = await findOrCreateCompany({
-                name: adzunaJob.company.display_name,
-                location: adzunaJob.location.display_name,
-                industry: detectedIndustry,
-                is_likely_agency_pattern: isLikelyAgency,
-              });
-
-              if (match_type === 'new') {
-                localStats.companies++;
-              } else if (isLikelyAgency) {
-                await updateCompanyAgencyPattern(company.id, true);
-              }
+              // Note: Companies are now created in signal generation (per user)
+              // Job postings are shared across all users (public API data)
 
               // Generate fingerprint
               const fingerprint = generateJobFingerprint({
@@ -521,7 +495,7 @@ export const ingestJobsFunction = inngest.createFunction(
 
               // Insert new job
               await supabase.from('job_postings').insert({
-                company_id: company.id,
+                company_id: null, // Companies created per-user in signal generation
                 adzuna_job_id: adzunaJob.id,
                 fingerprint,
                 title: adzunaJob.title,

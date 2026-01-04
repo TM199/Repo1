@@ -224,20 +224,8 @@ export async function GET(request: NextRequest) {
           stats.agencies_flagged++;
         }
 
-        // Find or create company
-        const { company, match_type } = await findOrCreateCompany({
-          name: reedJob.employerName,
-          location: reedJob.locationName,
-          industry: detectIndustryFromTitle(reedJob.jobTitle),
-          is_likely_agency_pattern: isLikelyAgency,
-        });
-
-        if (match_type === 'new') {
-          stats.companies_created++;
-        } else if (isLikelyAgency) {
-          // Update existing company's agency flag
-          await updateCompanyAgencyPattern(company.id, true);
-        }
+        // NOTE: Companies now created in signal generation (per user)
+        // This route is deprecated - use Inngest functions instead
 
         // Generate fingerprint
         const fingerprint = generateJobFingerprint({
@@ -274,7 +262,7 @@ export async function GET(request: NextRequest) {
         const { data: similarJobs } = await supabase
           .from('job_postings')
           .select('*')
-          .eq('company_id', company.id)
+          .eq('employer_name_from_source', reedJob.employerName)
           .eq('is_active', false)
           .order('last_seen_at', { ascending: false })
           .limit(10);
@@ -290,7 +278,7 @@ export async function GET(request: NextRequest) {
                 },
                 {
                   title: oldJob.title,
-                  company_name: company.name,
+                  company_name: reedJob.employerName,
                   location: oldJob.location || '',
                 }
               )
@@ -318,7 +306,7 @@ export async function GET(request: NextRequest) {
 
         // Insert job posting
         const { error: insertError } = await supabase.from('job_postings').insert({
-          company_id: company.id,
+          company_id: null, // Companies created per-user in signal generation
           reed_job_id: String(reedJob.jobId),
           fingerprint,
           title: reedJob.jobTitle,

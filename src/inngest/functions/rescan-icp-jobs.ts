@@ -318,6 +318,7 @@ export const rescanIcpJobsFunction = inngest.createFunction(
                       name: reedJob.employerName,
                       location: reedJob.locationName || '',
                       industry: detectedIndustry,
+                      user_id: profile.user_id,
                     });
 
                     // Check for similar inactive jobs (repost detection)

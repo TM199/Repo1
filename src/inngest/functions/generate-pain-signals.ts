@@ -18,6 +18,7 @@
 import { inngest } from '../client';
 import { createAdminClient } from '@/lib/supabase/server';
 import { activityLogger } from '@/lib/activity-logger';
+import { findOrCreateCompany } from '@/lib/companies/company-matcher';
 import {
   PAIN_SCORES,
   determineJobSignalType,
@@ -119,7 +120,7 @@ export const generatePainSignalsFunction = inngest.createFunction(
 
       const { data: staleJobs, error } = await supabase
         .from('job_postings')
-        .select('*, companies!inner(id, name), urgency_level')
+        .select('*')
         .eq('is_active', true)
         .lte('original_posted_date', thirtyDaysAgo.toISOString().split('T')[0]);
 
@@ -148,19 +149,27 @@ export const generatePainSignalsFunction = inngest.createFunction(
           const { signalType, painScore, urgency, isHardToFill } = signalConfig;
 
           for (const icp of matchingICPs) {
+            // Create user-specific company from job data
+            const { company } = await findOrCreateCompany({
+              name: job.employer_name_from_source || 'Unknown Company',
+              location: job.location || undefined,
+              industry: job.industry || undefined,
+              user_id: icp.user_id,
+            });
+
             const urgencyBoost = getUrgencyBoost(job.urgency_level as 'high' | 'medium' | null);
             const finalPainScore = painScore + urgencyBoost;
 
             // Use UPSERT to handle duplicates atomically
             const { error: upsertError } = await supabase.from('company_pain_signals').upsert({
-              company_id: job.company_id,
+              company_id: company.id,
               icp_profile_id: icp.id,
               pain_signal_type: signalType,
               source_job_posting_id: job.id,
               signal_title: generateSignalTitle(job.title, daysOpen, isHardToFill),
               signal_detail: generateSignalDetail(
                 job.title,
-                job.companies?.name || '',
+                company.name,
                 job.location,
                 daysOpen,
                 daysSinceRefresh,
@@ -209,7 +218,7 @@ export const generatePainSignalsFunction = inngest.createFunction(
 
       const { data: repostedJobs, error } = await supabase
         .from('job_postings')
-        .select('*, companies!inner(id, name)')
+        .select('*')
         .eq('is_active', true)
         .gt('repost_count', 0);
 
@@ -240,9 +249,17 @@ export const generatePainSignalsFunction = inngest.createFunction(
           }
 
           for (const icp of matchingICPs) {
+            // Create user-specific company from job data
+            const { company } = await findOrCreateCompany({
+              name: job.employer_name_from_source || 'Unknown Company',
+              location: job.location || undefined,
+              industry: job.industry || undefined,
+              user_id: icp.user_id,
+            });
+
             // Use UPSERT to handle duplicates atomically
             const { error: upsertError } = await supabase.from('company_pain_signals').upsert({
-              company_id: job.company_id,
+              company_id: company.id,
               icp_profile_id: icp.id,
               pain_signal_type: signalType,
               source_job_posting_id: job.id,
@@ -280,7 +297,7 @@ export const generatePainSignalsFunction = inngest.createFunction(
 
       const { data: salaryIncreaseJobs, error } = await supabase
         .from('job_postings')
-        .select('*, companies!inner(id, name)')
+        .select('*')
         .eq('is_active', true)
         .gt('salary_increase_from_previous', 10);
 
@@ -307,9 +324,17 @@ export const generatePainSignalsFunction = inngest.createFunction(
               : PAIN_SCORES.salary_increase_10_percent.pain_score;
 
           for (const icp of matchingICPs) {
+            // Create user-specific company from job data
+            const { company } = await findOrCreateCompany({
+              name: job.employer_name_from_source || 'Unknown Company',
+              location: job.location || undefined,
+              industry: job.industry || undefined,
+              user_id: icp.user_id,
+            });
+
             // Use UPSERT to handle duplicates atomically
             const { error: upsertError } = await supabase.from('company_pain_signals').upsert({
-              company_id: job.company_id,
+              company_id: company.id,
               icp_profile_id: icp.id,
               pain_signal_type: signalType,
               source_job_posting_id: job.id,
@@ -347,7 +372,7 @@ export const generatePainSignalsFunction = inngest.createFunction(
 
       const { data: referralJobs, error } = await supabase
         .from('job_postings')
-        .select('*, companies!inner(id, name)')
+        .select('*')
         .eq('is_active', true)
         .eq('mentions_referral_bonus', true);
 
@@ -364,13 +389,21 @@ export const generatePainSignalsFunction = inngest.createFunction(
           if (matchingICPs.length === 0) continue;
 
           for (const icp of matchingICPs) {
+            // Create user-specific company from job data
+            const { company } = await findOrCreateCompany({
+              name: job.employer_name_from_source || 'Unknown Company',
+              location: job.location || undefined,
+              industry: job.industry || undefined,
+              user_id: icp.user_id,
+            });
+
             const bonusText = job.referral_bonus_amount
               ? `£${job.referral_bonus_amount.toLocaleString()}`
               : 'offered';
 
             // Use UPSERT to handle duplicates atomically
             const { error: upsertError } = await supabase.from('company_pain_signals').upsert({
-              company_id: job.company_id,
+              company_id: company.id,
               icp_profile_id: icp.id,
               pain_signal_type: 'high_referral_bonus',
               source_job_posting_id: job.id,

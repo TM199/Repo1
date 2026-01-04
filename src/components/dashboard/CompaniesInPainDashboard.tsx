@@ -52,7 +52,7 @@ export function CompaniesInPainDashboard() {
   const [companies, setCompanies] = useState<CompanyWithPain[]>([]);
   const [loading, setLoading] = useState(true);
   const [icpProfiles, setIcpProfiles] = useState<ICPProfile[]>([]);
-  const [selectedIcpId, setSelectedIcpId] = useState<string>('all');
+  const [selectedIcpId, setSelectedIcpId] = useState<string>('');
   const [selectedIndustry, setSelectedIndustry] = useState<string>('all');
   const [selectedRegion, setSelectedRegion] = useState<string>('all');
   const [minPainScore, setMinPainScore] = useState<number>(0);
@@ -461,6 +461,13 @@ export function CompaniesInPainDashboard() {
     fetchICPProfiles();
   }, []);
 
+  // Set default ICP selection to first active ICP
+  useEffect(() => {
+    if (icpProfiles.length > 0 && !selectedIcpId) {
+      setSelectedIcpId(icpProfiles[0].id);
+    }
+  }, [icpProfiles, selectedIcpId]);
+
   // Get the selected ICP profile
   const selectedIcp = icpProfiles.find(p => p.id === selectedIcpId);
 
@@ -473,6 +480,14 @@ export function CompaniesInPainDashboard() {
     setLoading(true);
 
     try {
+      // CRITICAL: Only show companies if user has ICP profiles
+      // This prevents users from seeing other users' data
+      if (icpProfiles.length === 0) {
+        setCompanies([]);
+        setLoading(false);
+        return;
+      }
+
       let query = supabase
         .from('companies')
         .select(
@@ -491,25 +506,20 @@ export function CompaniesInPainDashboard() {
         .order('hiring_pain_score', { ascending: false })
         .limit(100);
 
+      // Filter by ICP profile (specific or all user's ICPs)
       if (selectedIcp) {
         query = query.eq('company_pain_signals.icp_profile_id', selectedIcp.id);
-      } else if (icpProfiles.length > 0) {
+      } else {
         const userIcpIds = icpProfiles.map(p => p.id);
         query = query.in('company_pain_signals.icp_profile_id', userIcpIds);
+      }
 
-        if (selectedIndustry !== 'all') {
-          query = query.eq('industry', selectedIndustry);
-        }
-        if (selectedRegion !== 'all') {
-          query = query.ilike('region', `%${selectedRegion}%`);
-        }
-      } else {
-        if (selectedIndustry !== 'all') {
-          query = query.eq('industry', selectedIndustry);
-        }
-        if (selectedRegion !== 'all') {
-          query = query.ilike('region', `%${selectedRegion}%`);
-        }
+      // Apply additional filters (industry/region)
+      if (selectedIndustry !== 'all') {
+        query = query.eq('industry', selectedIndustry);
+      }
+      if (selectedRegion !== 'all') {
+        query = query.ilike('region', `%${selectedRegion}%`);
       }
 
       const activeTabConfig = SIGNAL_TABS.find(t => t.id === activeTab);

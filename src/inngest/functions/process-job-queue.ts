@@ -20,7 +20,7 @@ import {
   mapAdzunaCategoryToIndustry,
   parseAdzunaDate,
 } from '@/lib/adzuna';
-import { findOrCreateCompany, updateCompanyAgencyPattern } from '@/lib/companies/company-matcher';
+// Note: Company creation removed - now handled in generate-pain-signals per user
 import {
   generateJobFingerprint,
   areJobsSimilar,
@@ -273,19 +273,8 @@ export const processJobQueueFunction = inngest.createFunction(
             continue;
           }
 
-          // Find or create company
-          const { company, match_type } = await findOrCreateCompany({
-            name: jobData.companyName,
-            location: jobData.location,
-            industry: jobData.detectedIndustry,
-            is_likely_agency_pattern: jobData.isLikelyAgency,
-          });
-
-          if (match_type === 'new') {
-            stats.new_companies++;
-          } else if (jobData.isLikelyAgency) {
-            await updateCompanyAgencyPattern(company.id, true);
-          }
+          // Note: Companies now created in signal generation (per user)
+          // Job postings are shared across all users (public API data)
 
           // Generate fingerprint
           const fingerprint = generateJobFingerprint({
@@ -314,7 +303,7 @@ export const processJobQueueFunction = inngest.createFunction(
             continue;
           }
 
-          // Check for reposts
+          // Check for reposts (using employer name instead of company_id)
           let previousPostingId: string | null = null;
           let salaryIncrease: number | null = null;
           let repostCount = 0;
@@ -322,9 +311,9 @@ export const processJobQueueFunction = inngest.createFunction(
           const { data: similarJobs } = await supabase
             .from('job_postings')
             .select('*')
-            .eq('company_id', company.id)
+            .eq('employer_name_from_source', jobData.companyName)
             .eq('is_active', false)
-            .order('last_seen_at', { ascending: false })
+            .order('last_seen_at', { ascending: false})
             .limit(10);
 
           if (similarJobs) {
@@ -332,7 +321,7 @@ export const processJobQueueFunction = inngest.createFunction(
               if (
                 areJobsSimilar(
                   { title: jobData.title, company_name: jobData.companyName, location: jobData.location },
-                  { title: oldJob.title, company_name: company.name, location: oldJob.location || '' }
+                  { title: oldJob.title, company_name: jobData.companyName, location: oldJob.location || '' }
                 )
               ) {
                 previousPostingId = oldJob.id;
@@ -359,7 +348,7 @@ export const processJobQueueFunction = inngest.createFunction(
 
           // Insert new job
           await supabase.from('job_postings').insert({
-            company_id: company.id,
+            company_id: null, // Companies created per-user in signal generation
             reed_job_id: source === 'reed' ? jobData.sourceId : null,
             adzuna_job_id: source === 'adzuna' ? jobData.sourceId : null,
             fingerprint,

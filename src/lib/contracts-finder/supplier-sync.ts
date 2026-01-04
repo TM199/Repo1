@@ -31,14 +31,15 @@ export interface SupplierSyncResult {
  *
  * Flow:
  * 1. Normalise supplier name
- * 2. Try to match existing company (domain → CH number → name)
- * 3. If no match, create new company
+ * 2. Try to match existing company (domain → CH number → name) for this user
+ * 3. If no match, create new company for this user
  * 4. If company has no domain, attempt resolution
  * 5. Update company with government supplier flag
  * 6. Return sync result with actionability status
  */
 export async function syncSupplierFromContract(
   award: ParsedContractAward,
+  userId: string,
   options?: {
     skipDomainResolution?: boolean;
   }
@@ -51,12 +52,13 @@ export async function syncSupplierFromContract(
     ? getIndustryFromCPV(award.cpv_codes[0])
     : null;
 
-  // Step 1: Find or create company using Sprint 1 matcher
+  // Step 1: Find or create company using Sprint 1 matcher (user-specific)
   const matchResult = await findOrCreateCompany({
     name: supplier.name,
     domain: supplier.domain || undefined,
     location: supplier.location || undefined,
     industry: industry || undefined,
+    user_id: userId,
   });
 
   const { company, match_type } = matchResult;

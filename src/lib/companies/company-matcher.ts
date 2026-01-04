@@ -15,6 +15,7 @@ interface CompanyInput {
   location?: string;
   industry?: string;
   is_likely_agency_pattern?: boolean;
+  user_id: string; // Required for user data isolation
 }
 
 interface Company {
@@ -97,11 +98,13 @@ export async function findOrCreateCompany(
   const normalizedName = normalizeCompanyName(input.name);
 
   // Strategy 1: Exact domain match (highest confidence)
+  // CRITICAL: Filter by user_id for data isolation
   if (input.domain) {
     const { data: domainMatch } = await supabase
       .from('companies')
       .select('*')
       .eq('domain', input.domain.toLowerCase())
+      .eq('user_id', input.user_id)
       .single();
 
     if (domainMatch) {
@@ -115,11 +118,13 @@ export async function findOrCreateCompany(
   }
 
   // Strategy 2: Companies House number match (highest confidence)
+  // CRITICAL: Filter by user_id for data isolation
   if (input.companies_house_number) {
     const { data: chMatch } = await supabase
       .from('companies')
       .select('*')
       .eq('companies_house_number', input.companies_house_number)
+      .eq('user_id', input.user_id)
       .single();
 
     if (chMatch) {
@@ -133,10 +138,12 @@ export async function findOrCreateCompany(
   }
 
   // Strategy 3: Exact normalized name match
+  // CRITICAL: Filter by user_id for data isolation
   const { data: exactNameMatch } = await supabase
     .from('companies')
     .select('*')
     .eq('name_normalized', normalizedName)
+    .eq('user_id', input.user_id)
     .single();
 
   if (exactNameMatch) {
@@ -149,10 +156,12 @@ export async function findOrCreateCompany(
   }
 
   // Strategy 4: Fuzzy name match (similarity > 85%)
-  // Search for candidates with similar names
+  // CRITICAL: Filter by user_id for data isolation
+  // Search for candidates with similar names WITHIN user's companies
   const { data: candidates } = await supabase
     .from('companies')
     .select('*')
+    .eq('user_id', input.user_id)
     .textSearch('name', normalizedName.split(' ').join(' | '));
 
   if (candidates && candidates.length > 0) {
@@ -178,6 +187,7 @@ export async function findOrCreateCompany(
   }
 
   // Strategy 5: Create new company
+  // CRITICAL: Include user_id for data isolation
   const { data: newCompany, error } = await supabase
     .from('companies')
     .insert({
@@ -188,6 +198,7 @@ export async function findOrCreateCompany(
       industry: input.industry,
       region: input.location,
       is_likely_agency_pattern: input.is_likely_agency_pattern ?? null,
+      user_id: input.user_id, // USER DATA ISOLATION
     })
     .select()
     .single();

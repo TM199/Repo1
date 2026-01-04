@@ -522,22 +522,8 @@ async function processJob(
     errors: string[];
   }
 ) {
-  // Find or create company
-  const { company, match_type } = await findOrCreateCompany({
-    name: job.companyName,
-    location: job.location,
-    industry: job.detectedIndustry,
-    is_likely_agency_pattern: job.isLikelyAgency,
-  });
-
-  if (match_type === 'new') {
-    stats.companies_created++;
-    // Domain resolution is now done on-demand via /api/companies/[id]/enrich
-    // or /api/admin/backfill-domains to avoid slowing down bulk ingestion
-  } else if (job.isLikelyAgency) {
-    // Update existing company's agency flag
-    await updateCompanyAgencyPattern(company.id, true);
-  }
+  // NOTE: Companies now created in signal generation (per user)
+  // This route is deprecated - use Inngest ingest-jobs function instead
 
   // Generate fingerprint
   const fingerprint = generateJobFingerprint({
@@ -578,7 +564,7 @@ async function processJob(
   const { data: similarJobs } = await supabase
     .from('job_postings')
     .select('*')
-    .eq('company_id', company.id)
+    .eq('employer_name_from_source', job.companyName)
     .eq('is_active', false)
     .order('last_seen_at', { ascending: false })
     .limit(10);
@@ -588,7 +574,7 @@ async function processJob(
       if (
         areJobsSimilar(
           { title: job.title, company_name: job.companyName, location: job.location },
-          { title: oldJob.title, company_name: company.name, location: oldJob.location || '' }
+          { title: oldJob.title, company_name: job.companyName, location: oldJob.location || '' }
         )
       ) {
         previousPostingId = oldJob.id;
@@ -620,7 +606,7 @@ async function processJob(
 
   // Insert new job posting
   const { error: insertError } = await supabase.from('job_postings').insert({
-    company_id: company.id,
+    company_id: null, // Companies created per-user in signal generation
     reed_job_id: job.source === 'reed' ? job.sourceId : null,
     adzuna_job_id: job.source === 'adzuna' ? job.sourceId : null,
     fingerprint,

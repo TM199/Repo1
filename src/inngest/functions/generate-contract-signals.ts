@@ -226,30 +226,7 @@ export const generateContractSignalsFunction = inngest.createFunction(
           try {
             localStats.contracts_processed++;
 
-            // Sync supplier (match/create company + domain resolution)
-            const syncResult = await syncSupplierFromContract(award);
-            localStats.suppliers_synced++;
-
-            if (syncResult.match_type === 'new') {
-              localStats.suppliers_new++;
-            }
-
-            if (syncResult.domain) {
-              localStats.domains_resolved++;
-            }
-
-            // Store contract award
-            const contractResult = await storeContractAward(award, syncResult.company_id);
-
-            if (!contractResult) {
-              continue; // Contract already exists or error
-            }
-
-            if (contractResult.isNew) {
-              localStats.contracts_stored++;
-            }
-
-            // Find matching ICPs for this contract (by industry/CPV codes only, not location)
+            // Find matching ICPs FIRST (by industry/CPV codes only, not location)
             const matchingICPs = getMatchingICPs(award, contractICPs);
 
             if (matchingICPs.length === 0) {
@@ -257,24 +234,48 @@ export const generateContractSignalsFunction = inngest.createFunction(
               continue;
             }
 
-            // Detect contract award signal
-            const awardSignal = detectContractAwardSignal(award, syncResult, contractResult.id);
+            // Create user-specific company and signals for each matching ICP
+            for (const icp of matchingICPs) {
+              // Sync supplier (create user-specific company + domain resolution)
+              const syncResult = await syncSupplierFromContract(award, icp.user_id);
+              localStats.suppliers_synced++;
 
-            // Detect first contract signal (if applicable)
-            const firstContractSignal = detectFirstContractSignal(
-              award,
-              syncResult,
-              contractResult.id
-            );
+              if (syncResult.match_type === 'new') {
+                localStats.suppliers_new++;
+              }
 
-            // Create signals for each matching ICP
-            const signalsToCreate: ContractSignalCandidate[] = [];
+              if (syncResult.domain) {
+                localStats.domains_resolved++;
+              }
 
-            if (awardSignal) signalsToCreate.push(awardSignal);
-            if (firstContractSignal) signalsToCreate.push(firstContractSignal);
+              // Store contract award (one per user's company)
+              const contractResult = await storeContractAward(award, syncResult.company_id);
 
-            for (const signal of signalsToCreate) {
-              for (const icp of matchingICPs) {
+              if (!contractResult) {
+                continue; // Contract already exists or error
+              }
+
+              if (contractResult.isNew) {
+                localStats.contracts_stored++;
+              }
+
+              // Detect contract award signal
+              const awardSignal = detectContractAwardSignal(award, syncResult, contractResult.id);
+
+              // Detect first contract signal (if applicable)
+              const firstContractSignal = detectFirstContractSignal(
+                award,
+                syncResult,
+                contractResult.id
+              );
+
+              // Create signals for this ICP
+              const signalsToCreate: ContractSignalCandidate[] = [];
+
+              if (awardSignal) signalsToCreate.push(awardSignal);
+              if (firstContractSignal) signalsToCreate.push(firstContractSignal);
+
+              for (const signal of signalsToCreate) {
                 // Upsert signal (atomic - no race conditions)
                 const { error: upsertError } = await supabase.from('company_pain_signals').upsert(
                   {
@@ -307,10 +308,10 @@ export const generateContractSignalsFunction = inngest.createFunction(
                   }
                 }
               }
-            }
 
-            // Mark contract as having generated signals
-            await markContractSignalGenerated(contractResult.id);
+              // Mark contract as having generated signals (per user's contract record)
+              await markContractSignalGenerated(contractResult.id);
+            }
           } catch (err) {
             const message = err instanceof Error ? err.message : 'Unknown error';
             localStats.errors.push(`Contract ${award.ocid}: ${message}`);

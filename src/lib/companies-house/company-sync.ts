@@ -27,12 +27,13 @@ interface SyncedCompany {
 /**
  * Sync a company from Companies House data
  * 1. Fetch CH details
- * 2. Find or create company record
+ * 2. Find or create company record (user-specific)
  * 3. Resolve domain if missing
  * 4. Update CH-specific fields
  */
 export async function syncCompanyFromCH(
   chNumber: string,
+  userId: string,
   options?: {
     skipDomainResolution?: boolean;
   }
@@ -57,12 +58,13 @@ export async function syncCompanyFromCH(
     chCompany.registered_office_address?.region ||
     null;
 
-  // 4. Find or create company using the matcher
+  // 4. Find or create company using the matcher (user-specific)
   const { company, match_type } = await findOrCreateCompany({
     name: chCompany.company_name,
     companies_house_number: chNumber,
     location: location || undefined,
     industry: industry || undefined,
+    user_id: userId,
   });
 
   const isNew = match_type === 'new';
@@ -129,6 +131,7 @@ export async function syncCompanyFromCH(
  */
 export async function batchSyncCompaniesFromCH(
   chNumbers: string[],
+  userId: string,
   options?: {
     skipDomainResolution?: boolean;
     delayMs?: number;
@@ -145,7 +148,7 @@ export async function batchSyncCompaniesFromCH(
     const chNumber = chNumbers[i];
 
     try {
-      const result = await syncCompanyFromCH(chNumber, {
+      const result = await syncCompanyFromCH(chNumber, userId, {
         skipDomainResolution: options?.skipDomainResolution,
       });
 
