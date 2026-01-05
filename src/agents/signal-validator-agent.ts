@@ -174,8 +174,8 @@ export async function saveValidationResult(
   const updates: Record<string, unknown> = {
     validation_status: result.validationStatus,
     relevance_score: result.relevanceScore,
-    // signal_explanation saved in relevance_reasoning for now (column not yet added)
-    relevance_reasoning: result.signalExplanation ? `${result.signalExplanation}\n\n---\n\n${result.relevanceReasoning}` : result.relevanceReasoning,
+    signal_explanation: result.signalExplanation,
+    relevance_reasoning: result.relevanceReasoning,
     company_industry_detected: result.companyIndustryDetected,
     company_size_detected: result.companySizeDetected,
     opportunity_type: result.opportunityType,
