@@ -485,3 +485,90 @@ TypeScript build passes with no errors
 
 ### Implementation Date
 January 5, 2026
+
+---
+
+# Contract/Tender Signals Not Showing in Pain Dashboard
+
+## Problem Analysis
+
+**Root Cause:** Government sync writes to wrong table!
+
+| Data Flow | Table Written | Dashboard Queries | Result |
+|-----------|---------------|-------------------|--------|
+| Government Sync | `signals` | ❌ Not queried | Data invisible |
+| Job Pain Signals | `company_pain_signals` | ✅ Queried | Data shows |
+
+### Evidence
+- Jamie ICP has 29 contract signals in `signals` table
+- Dashboard only queries `company_pain_signals` table (see `CompaniesInPainDashboard.tsx` line 491)
+- Government sync writes to `signals` (see `sync-government-data.ts` line 152)
+
+### Schema Differences
+| Field | `signals` table | `company_pain_signals` table |
+|-------|-----------------|------------------------------|
+| Company | `company_name` (string) | `company_id` (FK) |
+| Type | `signal_type` | `pain_signal_type` |
+| Source | `source_type` | `source` |
+
+## Solution
+
+Modify `sync-government-data.ts` to ALSO write to `company_pain_signals` using the same pattern as `generate-pain-signals.ts`:
+1. Use `findOrCreateCompany()` to create/find company
+2. Insert into `company_pain_signals` with correct schema
+
+## Tasks
+
+- [ ] **1. Add company creation to government sync**
+  - Import `findOrCreateCompany`
+  - Create company for each contract signal
+
+- [ ] **2. Write to `company_pain_signals` for Contracts Finder**
+  - After existing `signals` upsert, also upsert to `company_pain_signals`
+  - Use `source: 'contracts_finder'`, `pain_signal_type: 'contract_awarded'`
+
+- [ ] **3. Write to `company_pain_signals` for Find a Tender**
+  - Same pattern as Contracts Finder
+  - Use `source: 'find_a_tender'`
+
+- [ ] **4. Backfill Jamie's existing signals**
+  - Query existing signals from `signals` table for Jamie's ICP
+  - Create corresponding `company_pain_signals` records
+
+- [ ] **5. Test**
+  - Verify Jamie's contracts appear in Pain Dashboard
+  - Test Contracts tab filter works
+
+## Files Modified
+
+1. `src/inngest/functions/sync-government-data.ts` - Added writes to `company_pain_signals`
+
+## Review - COMPLETED ✅
+
+### Changes Made (1 file)
+
+#### `src/inngest/functions/sync-government-data.ts`
+- Added import for `findOrCreateCompany`
+- After each signal upsert to `signals` table, now also:
+  1. Creates/finds a user-specific company via `findOrCreateCompany`
+  2. Inserts a pain signal to `company_pain_signals` with correct schema
+- Contracts Finder signals use `source: 'contracts_finder'`
+- Find a Tender signals use `source: 'find_a_tender'`
+- Both use `pain_signal_type: 'contract_awarded'`
+
+### Backfill
+- Created `scripts/backfill-jamie-contracts.ts` for one-time migration
+- 28 out of 29 signals backfilled for Jamie's ICP
+- 29 companies created in the companies table
+
+### Build Status
+✅ TypeScript build passes with no errors
+
+### How It Works Now
+1. Government sync fetches contracts/tenders
+2. Writes to `signals` table (existing behavior)
+3. **NEW**: Also writes to `company_pain_signals` table
+4. Dashboard queries `company_pain_signals` → contracts now visible!
+
+### Implementation Date
+January 5, 2026

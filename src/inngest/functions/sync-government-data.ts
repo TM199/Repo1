@@ -22,6 +22,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { activityLogger } from '@/lib/activity-logger';
 import { fetchContractAwards } from '@/lib/contracts-finder';
 import { fetchFTSAwards } from '@/lib/find-a-tender';
+import { findOrCreateCompany } from '@/lib/companies/company-matcher';
 import { ICPProfile } from '@/types';
 
 interface SignalResult {
@@ -165,6 +166,33 @@ export const syncGovernmentDataFunction = inngest.createFunction(
             }, { onConflict: 'hash', ignoreDuplicates: true });
 
             if (!insertError) localResult.new++;
+
+            // Also write to company_pain_signals so it shows in dashboard
+            const { company } = await findOrCreateCompany({
+              name: signal.company_name,
+              domain: signal.company_domain || undefined,
+              location: signal.location || undefined,
+              user_id: icp.user_id,
+            });
+
+            const signalDetail = `${signal.signal_detail}${signal.buyer_name ? ` | Buyer: ${signal.buyer_name}` : ''}${signal.value ? ` | Value: £${signal.value.toLocaleString()}` : ''}`;
+
+            await supabase.from('company_pain_signals').upsert({
+              company_id: company.id,
+              icp_profile_id: icp.id,
+              pain_signal_type: 'contract_awarded',
+              signal_title: signal.signal_title,
+              signal_detail: signalDetail,
+              signal_value: signal.value || 0,
+              pain_score_contribution: 15,
+              urgency: 'short_term',
+              source: 'contracts_finder',
+              detected_at: new Date().toISOString(),
+              is_active: true,
+            }, {
+              onConflict: 'company_id,icp_profile_id,pain_signal_type,signal_title',
+              ignoreDuplicates: true,
+            });
           }
         }
 
@@ -236,6 +264,33 @@ export const syncGovernmentDataFunction = inngest.createFunction(
             }, { onConflict: 'hash', ignoreDuplicates: true });
 
             if (!insertError) localResult.new++;
+
+            // Also write to company_pain_signals so it shows in dashboard
+            const { company } = await findOrCreateCompany({
+              name: signal.company_name,
+              domain: signal.company_domain || undefined,
+              location: signal.location || undefined,
+              user_id: icp.user_id,
+            });
+
+            const signalDetail = `${signal.signal_detail}${signal.buyer_name ? ` | Buyer: ${signal.buyer_name}` : ''}${signal.value ? ` | Value: £${signal.value.toLocaleString()}` : ''}`;
+
+            await supabase.from('company_pain_signals').upsert({
+              company_id: company.id,
+              icp_profile_id: icp.id,
+              pain_signal_type: 'contract_awarded',
+              signal_title: signal.signal_title,
+              signal_detail: signalDetail,
+              signal_value: signal.value || 0,
+              pain_score_contribution: 15,
+              urgency: 'short_term',
+              source: 'find_a_tender',
+              detected_at: new Date().toISOString(),
+              is_active: true,
+            }, {
+              onConflict: 'company_id,icp_profile_id,pain_signal_type,signal_title',
+              ignoreDuplicates: true,
+            });
           }
         }
 
