@@ -497,8 +497,6 @@ export function CompaniesInPainDashboard() {
             id, pain_signal_type, signal_title, signal_detail,
             signal_value, days_since_refresh, urgency, detected_at, source_job_posting_id,
             source, source_contract_id,
-            validation_status, relevance_score, signal_explanation, relevance_reasoning,
-            recommended_action, talking_points,
             job_postings:source_job_posting_id(source_url)
           )
         `
