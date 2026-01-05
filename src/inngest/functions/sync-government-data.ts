@@ -67,6 +67,8 @@ export const syncGovernmentDataFunction = inngest.createFunction(
 
     // Optional: filter to specific ICP if provided via event
     const targetIcpId = event?.data?.icpId as string | undefined;
+    // Optional: lookback days for backfill (default: 1 for daily sync, 30 for initial ICP scan)
+    const lookbackDays = (event?.data?.lookbackDays as number) || 1;
 
     const results: Record<string, SignalResult> = {
       contractsFinder: { success: false, found: 0, new: 0, skipped_no_icp: false, error: null },
@@ -128,8 +130,8 @@ export const syncGovernmentDataFunction = inngest.createFunction(
       }
 
       try {
-        console.log(`[Government Sync] Syncing Contracts Finder for ${contractsICPs.length} ICPs...`);
-        const { signals, error } = await fetchContractAwards(1);
+        console.log(`[Government Sync] Syncing Contracts Finder for ${contractsICPs.length} ICPs (${lookbackDays} days)...`);
+        const { signals, error } = await fetchContractAwards(lookbackDays);
 
         if (error) {
           localResult.error = error;
@@ -151,14 +153,13 @@ export const syncGovernmentDataFunction = inngest.createFunction(
               source_type: 'search',
               signal_type: 'contract_awarded',
               company_name: signal.company_name,
-              company_domain: signal.company_domain,
+              company_domain: signal.company_domain || '',
               signal_title: signal.signal_title,
               signal_detail: `${signal.signal_detail}${signal.buyer_name ? ` | Buyer: ${signal.buyer_name}` : ''}${signal.value ? ` | Value: £${signal.value.toLocaleString()}` : ''}`,
               signal_url: signal.signal_url,
               location: signal.location,
               hash: `${fingerprint}_${icp.id}`,
               icp_profile_id: icp.id,
-              user_id: icp.user_id,
               detected_at: new Date().toISOString(),
               is_new: true,
             }, { onConflict: 'hash', ignoreDuplicates: true });
@@ -200,8 +201,8 @@ export const syncGovernmentDataFunction = inngest.createFunction(
       }
 
       try {
-        console.log(`[Government Sync] Syncing Find a Tender for ${tendersICPs.length} ICPs...`);
-        const { signals, error } = await fetchFTSAwards(1);
+        console.log(`[Government Sync] Syncing Find a Tender for ${tendersICPs.length} ICPs (${lookbackDays} days)...`);
+        const { signals, error } = await fetchFTSAwards(lookbackDays);
 
         if (error) {
           localResult.error = error;
@@ -223,14 +224,13 @@ export const syncGovernmentDataFunction = inngest.createFunction(
               source_type: 'search',
               signal_type: 'contract_awarded',
               company_name: signal.company_name,
-              company_domain: signal.company_domain,
+              company_domain: signal.company_domain || '',
               signal_title: signal.signal_title,
               signal_detail: `${signal.signal_detail}${signal.buyer_name ? ` | Buyer: ${signal.buyer_name}` : ''}${signal.value ? ` | Value: £${signal.value.toLocaleString()}` : ''}`,
               signal_url: signal.signal_url,
               location: signal.location,
               hash: `${fingerprint}_${icp.id}`,
               icp_profile_id: icp.id,
-              user_id: icp.user_id,
               detected_at: new Date().toISOString(),
               is_new: true,
             }, { onConflict: 'hash', ignoreDuplicates: true });

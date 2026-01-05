@@ -181,6 +181,24 @@ export async function POST(
       console.warn('[ICP Scan] Failed to trigger worker (will process on schedule):', inngestError);
     }
 
+    // Trigger 30-day government sync for contracts/tenders if enabled
+    const hasContractsOrTenders = icpProfile.signal_types.includes('contracts_awarded') ||
+                                   icpProfile.signal_types.includes('tenders');
+    if (hasContractsOrTenders) {
+      console.log(`[ICP Scan] Triggering 30-day government backfill for ${icpProfile.name}`);
+      try {
+        await inngest.send({
+          name: 'government/sync',
+          data: {
+            icpId: id,
+            lookbackDays: 30,
+          },
+        });
+      } catch (govError) {
+        console.warn('[ICP Scan] Failed to trigger government sync:', govError);
+      }
+    }
+
     // Build detailed user-friendly message
     const estimatedHours = Math.ceil((tasksToCreate.length * 20) / 60);
     const estimatedCompletionTime = new Date(Date.now() + estimatedHours * 60 * 60 * 1000);

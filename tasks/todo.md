@@ -424,3 +424,64 @@ Add an option in the ICP search form that allows users to search ALL locations i
 
 ### Implementation Date
 January 5, 2026
+
+---
+
+# ICP Contract/Tender 30-Day Backfill on Creation
+
+## Problem
+When an ICP is created, contracts and tenders don't appear until the 5am daily sync runs - and even then, only contracts from the last 24 hours are fetched. This means new ICPs miss historical data.
+
+**Root Cause Found:** The `signals` table was being inserted with `user_id` column which doesn't exist. This caused silent failures.
+
+## Solution
+1. Trigger a 30-day backfill of contracts/tenders when an ICP scan is run (if contracts_awarded or tenders signal types are enabled)
+2. Allow "no location" filter to return all contracts/tenders (similar to job pain "All UK" option)
+3. Daily sync continues to fetch last 1 day for incremental updates
+
+## Tasks
+
+- [x] Manually backfill 30 days of contracts/tenders for jamie ICP (29 signals added)
+- [ ] Modify sync-government-data function to accept lookbackDays parameter (default: 1, backfill: 30)
+- [ ] Handle empty locations array to return ALL contracts/tenders (no location filter)
+- [ ] Modify ICP scan to trigger government backfill with 30-day lookback when contracts_awarded or tenders enabled
+- [ ] Test the changes with a new ICP
+
+## Implementation Details
+
+### 1. Government Sync Function Change
+File: `src/inngest/functions/sync-government-data.ts`
+- Accept optional `lookbackDays` from event data (default: 1)
+- Pass lookbackDays to fetchContractAwards and fetchFTSAwards
+- Handle empty locations array = match ALL signals (no filter)
+
+### 2. Trigger on ICP Scan
+File: `src/app/api/icp/[id]/scan/route.ts`
+- After ICP scan is triggered, check if signal_types includes 'contracts_awarded' or 'tenders'
+- If yes, send Inngest event `government/sync` with `{ icpId, lookbackDays: 30 }`
+
+## Review - COMPLETED
+
+### Changes Made (2 files)
+
+#### 1. `src/inngest/functions/sync-government-data.ts`
+- Added `lookbackDays` parameter from event data (default: 1 for daily sync)
+- Removed `user_id` field from signals upsert (column doesn't exist in signals table - this was the root cause of silent failures!)
+- Both Contracts Finder and Find a Tender now use the lookbackDays parameter
+- Location filtering already worked correctly (empty locations array = match all)
+
+#### 2. `src/app/api/icp/[id]/scan/route.ts`
+- Added automatic 30-day government backfill trigger when ICP has `contracts_awarded` or `tenders` signal types
+- Sends Inngest event `government/sync` with `{ icpId, lookbackDays: 30 }`
+
+### How It Works Now
+
+1. **On ICP Scan**: If contracts_awarded or tenders enabled → triggers 30-day backfill
+2. **Daily 5am Cron**: Continues to sync last 1 day for incremental updates
+3. **Location Filter**: Empty locations array returns ALL contracts/tenders (no filter)
+
+### Build Status
+TypeScript build passes with no errors
+
+### Implementation Date
+January 5, 2026
