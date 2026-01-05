@@ -13,9 +13,24 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { ExternalLink, Download, ChevronUp, ChevronDown, Users } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { ExternalLink, Download, ChevronUp, ChevronDown, Users, AlertCircle, CheckCircle2, Zap } from 'lucide-react';
 
-type SignalWithContacts = Signal & { contacts?: SignalContact[] };
+type SignalWithContacts = Signal & {
+  contacts?: SignalContact[];
+  validation_status?: string | null;
+  relevance_score?: number | null;
+  signal_explanation?: string | null;
+  relevance_reasoning?: string | null;
+  recommended_action?: string | null;
+  talking_points?: string[] | null;
+};
 
 interface SignalsTableProps {
   signals: SignalWithContacts[];
@@ -41,10 +56,34 @@ const signalTypeColors: Record<string, string> = {
   layoffs_restructure: 'bg-red-100 text-red-800',
 };
 
+const validationStatusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
+  validated: {
+    color: 'bg-green-100 text-green-800',
+    icon: <CheckCircle2 className="h-4 w-4" />,
+    label: 'Validated',
+  },
+  skipped: {
+    color: 'bg-gray-100 text-gray-800',
+    icon: <AlertCircle className="h-4 w-4" />,
+    label: 'Skipped',
+  },
+  failed: {
+    color: 'bg-red-100 text-red-800',
+    icon: <AlertCircle className="h-4 w-4" />,
+    label: 'Failed',
+  },
+  pending: {
+    color: 'bg-amber-100 text-amber-800',
+    icon: <Zap className="h-4 w-4" />,
+    label: 'Pending',
+  },
+};
+
 export function SignalsTable({ signals, onExport }: SignalsTableProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sortField, setSortField] = useState<SortField>('detected_at');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [selectedSignal, setSelectedSignal] = useState<SignalWithContacts | null>(null);
 
   const sortedSignals = useMemo(() => {
     return [...signals].sort((a, b) => {
@@ -174,6 +213,7 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
               >
                 Detected <SortIcon field="detected_at" />
               </TableHead>
+              <TableHead>Status</TableHead>
               <TableHead className="w-10">Link</TableHead>
             </TableRow>
           </TableHeader>
@@ -226,6 +266,31 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
                   {new Date(signal.detected_at).toLocaleDateString()}
                 </TableCell>
                 <TableCell>
+                  {signal.validation_status ? (
+                    <button
+                      onClick={() => setSelectedSignal(signal)}
+                      className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+                    >
+                      <Badge
+                        variant="outline"
+                        className={`text-xs flex items-center gap-1 ${
+                          validationStatusConfig[signal.validation_status]?.color || 'bg-gray-100 text-gray-800'
+                        }`}
+                      >
+                        {validationStatusConfig[signal.validation_status]?.icon}
+                        {validationStatusConfig[signal.validation_status]?.label || signal.validation_status}
+                      </Badge>
+                      {signal.relevance_score !== undefined && signal.relevance_score !== null && (
+                        <span className="text-xs text-muted-foreground">
+                          {Math.round(signal.relevance_score * 100)}%
+                        </span>
+                      )}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Not validated</span>
+                  )}
+                </TableCell>
+                <TableCell>
                   {signal.signal_url && (
                     <a
                       href={signal.signal_url}
@@ -248,6 +313,98 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
           No signals found
         </div>
       )}
+
+      {/* Signal Details Dialog */}
+      <Dialog open={!!selectedSignal} onOpenChange={(open) => !open && setSelectedSignal(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{selectedSignal?.company_name}</DialogTitle>
+            <DialogDescription>
+              {selectedSignal?.signal_title}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {selectedSignal?.signal_explanation && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm">Signal Explanation</h4>
+                <p className="text-sm text-foreground">{selectedSignal.signal_explanation}</p>
+              </div>
+            )}
+
+            {selectedSignal?.relevance_reasoning && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm">Why It's Relevant</h4>
+                <p className="text-sm text-foreground">{selectedSignal.relevance_reasoning}</p>
+              </div>
+            )}
+
+            {selectedSignal?.recommended_action && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm">Recommended Action</h4>
+                <Badge
+                  variant="outline"
+                  className={`text-xs ${
+                    selectedSignal.recommended_action === 'reach_out'
+                      ? 'bg-green-100 text-green-800'
+                      : selectedSignal.recommended_action === 'monitor'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-gray-100 text-gray-800'
+                  }`}
+                >
+                  {selectedSignal.recommended_action.replace(/_/g, ' ')}
+                </Badge>
+              </div>
+            )}
+
+            {selectedSignal?.talking_points && selectedSignal.talking_points.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm">Talking Points</h4>
+                <ul className="space-y-1">
+                  {selectedSignal.talking_points.map((point, i) => (
+                    <li key={i} className="text-sm text-foreground flex items-start gap-2">
+                      <span className="text-primary font-semibold">{i + 1}.</span>
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {selectedSignal?.relevance_score !== undefined && selectedSignal.relevance_score !== null && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm">Relevance Score</h4>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 bg-gray-200 rounded-full h-2">
+                    <div
+                      className="bg-blue-600 h-2 rounded-full"
+                      style={{ width: `${Math.round(selectedSignal.relevance_score * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-semibold">
+                    {Math.round(selectedSignal.relevance_score * 100)}%
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {selectedSignal?.validation_status && (
+              <div className="space-y-2">
+                <h4 className="font-semibold text-sm">Validation Status</h4>
+                <Badge
+                  variant="outline"
+                  className={`text-xs flex w-fit items-center gap-1 ${
+                    validationStatusConfig[selectedSignal.validation_status]?.color ||
+                    'bg-gray-100 text-gray-800'
+                  }`}
+                >
+                  {validationStatusConfig[selectedSignal.validation_status]?.icon}
+                  {validationStatusConfig[selectedSignal.validation_status]?.label || selectedSignal.validation_status}
+                </Badge>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { processJobQueueFunction } from './process-job-queue';
 import { rescanIcpJobsFunction } from './rescan-icp-jobs';
 import { scheduleDailyJobsFunction } from './schedule-daily-jobs';
 import { syncGovernmentDataFunction } from './sync-government-data';
+import { validateSignalsFunction } from './validate-signals';
 
 export const functions = [
   backfillDomainsFunction,
@@ -18,4 +19,5 @@ export const functions = [
   rescanIcpJobsFunction,
   scheduleDailyJobsFunction,
   syncGovernmentDataFunction,
+  validateSignalsFunction,
 ];

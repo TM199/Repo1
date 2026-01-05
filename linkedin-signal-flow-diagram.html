@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Signal Intelligence Flow | Signal Mentis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #0a0f1a;
+            --bg-surface: #111827;
+            --bg-elevated: #1e293b;
+            --cyan: #06b6d4;
+            --cyan-dim: rgba(6, 182, 212, 0.3);
+            --indigo: #6366f1;
+            --indigo-dim: rgba(99, 102, 241, 0.3);
+            --purple: #a855f7;
+            --emerald: #10b981;
+            --amber: #f59e0b;
+            --rose: #f43f5e;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #475569;
+            --glow-cyan: 0 0 30px rgba(6, 182, 212, 0.4);
+            --glow-indigo: 0 0 30px rgba(99, 102, 241, 0.4);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-deep);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated grid background */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            animation: gridPulse 8s ease-in-out infinite;
+        }
+
+        @keyframes gridPulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        /* Gradient orbs */
+        .orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.4;
+            animation: orbFloat 20s ease-in-out infinite;
+        }
+
+        .orb-1 {
+            width: 400px;
+            height: 400px;
+            background: var(--cyan);
+            top: -100px;
+            right: -100px;
+            animation-delay: 0s;
+        }
+
+        .orb-2 {
+            width: 300px;
+            height: 300px;
+            background: var(--indigo);
+            bottom: -50px;
+            left: -50px;
+            animation-delay: -7s;
+        }
+
+        .orb-3 {
+            width: 200px;
+            height: 200px;
+            background: var(--purple);
+            top: 50%;
+            left: 30%;
+            animation-delay: -14s;
+        }
+
+        @keyframes orbFloat {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            25% { transform: translate(30px, -30px) scale(1.1); }
+            50% { transform: translate(-20px, 20px) scale(0.9); }
+            75% { transform: translate(20px, 10px) scale(1.05); }
+        }
+
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+            opacity: 0;
+            animation: fadeSlideIn 0.8s ease-out 0.2s forwards;
+        }
+
+        @keyframes fadeSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: linear-gradient(135deg, var(--cyan-dim), var(--indigo-dim));
+            border: 1px solid var(--cyan-dim);
+            border-radius: 100px;
+            padding: 8px 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+        }
+
+        .header-badge::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            background: var(--cyan);
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--cyan); }
+            50% { opacity: 0.7; box-shadow: 0 0 10px 4px var(--cyan-dim); }
+        }
+
+        .header h1 {
+            font-size: clamp(32px, 5vw, 56px);
+            font-weight: 700;
+            line-height: 1.1;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, var(--text-primary) 0%, var(--cyan) 50%, var(--indigo) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 18px;
+            color: var(--text-secondary);
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        /* Flow Diagram Container */
+        .flow-container {
+            position: relative;
+            padding: 40px 0;
+        }
+
+        /* The main flow line */
+        .flow-line {
+            position: absolute;
+            top: 50%;
+            left: 5%;
+            right: 5%;
+            height: 2px;
+            background: linear-gradient(90deg,
+                transparent 0%,
+                var(--cyan-dim) 10%,
+                var(--cyan) 30%,
+                var(--indigo) 50%,
+                var(--purple) 70%,
+                var(--emerald) 90%,
+                transparent 100%
+            );
+            transform: translateY(-50%);
+            opacity: 0;
+            animation: lineReveal 1.5s ease-out 0.5s forwards;
+        }
+
+        @keyframes lineReveal {
+            from {
+                opacity: 0;
+                clip-path: inset(0 100% 0 0);
+            }
+            to {
+                opacity: 1;
+                clip-path: inset(0 0 0 0);
+            }
+        }
+
+        /* Animated particles along the line */
+        .particle {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: var(--cyan);
+            border-radius: 50%;
+            top: 50%;
+            left: 0;
+            transform: translateY(-50%);
+            box-shadow: var(--glow-cyan);
+            animation: particleFlow 4s linear infinite;
+            opacity: 0;
+        }
+
+        .particle:nth-child(2) { animation-delay: 1s; background: var(--indigo); box-shadow: var(--glow-indigo); }
+        .particle:nth-child(3) { animation-delay: 2s; background: var(--purple); }
+        .particle:nth-child(4) { animation-delay: 3s; background: var(--emerald); }
+
+        @keyframes particleFlow {
+            0% { left: 5%; opacity: 0; }
+            5% { opacity: 1; }
+            95% { opacity: 1; }
+            100% { left: 95%; opacity: 0; }
+        }
+
+        /* Flow stages container */
+        .flow-stages {
+            display: flex;
+            justify-content: space-between;
+            align-items: stretch;
+            gap: 20px;
+            position: relative;
+            z-index: 2;
+        }
+
+        /* Individual stage */
+        .stage {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            opacity: 0;
+            transform: translateY(30px);
+        }
+
+        .stage:nth-child(1) { animation: stageReveal 0.6s ease-out 0.8s forwards; }
+        .stage:nth-child(2) { animation: stageReveal 0.6s ease-out 1.0s forwards; }
+        .stage:nth-child(3) { animation: stageReveal 0.6s ease-out 1.2s forwards; }
+        .stage:nth-child(4) { animation: stageReveal 0.6s ease-out 1.4s forwards; }
+        .stage:nth-child(5) { animation: stageReveal 0.6s ease-out 1.6s forwards; }
+
+        @keyframes stageReveal {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Stage number */
+        .stage-number {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        /* Stage card */
+        .stage-card {
+            background: var(--bg-surface);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 24px 20px;
+            width: 100%;
+            min-height: 300px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .stage-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--cyan), var(--indigo));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .stage-card:hover {
+            border-color: var(--cyan-dim);
+            transform: translateY(-4px);
+            box-shadow: var(--glow-cyan);
+        }
+
+        .stage-card:hover::before {
+            opacity: 1;
+        }
+
+        /* Stage icon container */
+        .stage-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+            position: relative;
+        }
+
+        .stage-icon svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        .stage-icon::after {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 16px;
+            background: inherit;
+            opacity: 0.4;
+            filter: blur(12px);
+            z-index: -1;
+        }
+
+        .stage:nth-child(1) .stage-icon { background: linear-gradient(135deg, var(--rose), #ec4899); }
+        .stage:nth-child(2) .stage-icon { background: linear-gradient(135deg, var(--cyan), var(--indigo)); }
+        .stage:nth-child(3) .stage-icon { background: linear-gradient(135deg, var(--indigo), var(--purple)); }
+        .stage:nth-child(4) .stage-icon { background: linear-gradient(135deg, var(--purple), #d946ef); }
+        .stage:nth-child(5) .stage-icon { background: linear-gradient(135deg, var(--emerald), #22c55e); }
+
+        .stage-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .stage-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            margin-bottom: 16px;
+        }
+
+        /* Data source tags */
+        .source-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: auto;
+        }
+
+        .source-tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: 6px;
+            background: var(--bg-elevated);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .source-tag.active {
+            background: var(--cyan-dim);
+            border-color: var(--cyan);
+            color: var(--cyan);
+            animation: tagPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes tagPulse {
+            0%, 100% { box-shadow: 0 0 0 0 var(--cyan-dim); }
+            50% { box-shadow: 0 0 12px 2px var(--cyan-dim); }
+        }
+
+        .source-tag::before {
+            content: '';
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        /* Signal badges section */
+        .signals-section {
+            margin-top: 80px;
+            opacity: 0;
+            animation: fadeSlideIn 0.8s ease-out 2s forwards;
+        }
+
+        .signals-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .signals-header h3 {
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .signals-header p {
+            font-size: 24px;
+            font-weight: 600;
+            background: linear-gradient(90deg, var(--cyan), var(--indigo));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .signals-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .signal-badge {
+            background: var(--bg-surface);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all 0.3s ease;
+            cursor: default;
+            opacity: 0;
+            transform: scale(0.9);
+        }
+
+        .signal-badge:nth-child(1) { animation: badgeReveal 0.4s ease-out 2.2s forwards; }
+        .signal-badge:nth-child(2) { animation: badgeReveal 0.4s ease-out 2.3s forwards; }
+        .signal-badge:nth-child(3) { animation: badgeReveal 0.4s ease-out 2.4s forwards; }
+        .signal-badge:nth-child(4) { animation: badgeReveal 0.4s ease-out 2.5s forwards; }
+        .signal-badge:nth-child(5) { animation: badgeReveal 0.4s ease-out 2.6s forwards; }
+        .signal-badge:nth-child(6) { animation: badgeReveal 0.4s ease-out 2.7s forwards; }
+
+        @keyframes badgeReveal {
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .signal-badge:hover {
+            border-color: var(--cyan-dim);
+            transform: translateY(-2px);
+            box-shadow: var(--glow-cyan);
+        }
+
+        .signal-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .signal-badge:nth-child(1) .signal-icon { background: rgba(6, 182, 212, 0.15); }
+        .signal-badge:nth-child(2) .signal-icon { background: rgba(99, 102, 241, 0.15); }
+        .signal-badge:nth-child(3) .signal-icon { background: rgba(16, 185, 129, 0.15); }
+        .signal-badge:nth-child(4) .signal-icon { background: rgba(245, 158, 11, 0.15); }
+        .signal-badge:nth-child(5) .signal-icon { background: rgba(168, 85, 247, 0.15); }
+        .signal-badge:nth-child(6) .signal-icon { background: rgba(244, 63, 94, 0.15); }
+
+        .signal-info h4 {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+
+        .signal-info p {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* Stats banner */
+        .stats-banner {
+            margin-top: 60px;
+            background: linear-gradient(135deg, var(--bg-surface), var(--bg-elevated));
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 32px;
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 24px;
+            opacity: 0;
+            animation: fadeSlideIn 0.8s ease-out 2.8s forwards;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 36px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--cyan), var(--indigo));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 60px;
+            text-align: center;
+            padding: 32px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            opacity: 0;
+            animation: fadeSlideIn 0.8s ease-out 3s forwards;
+        }
+
+        .footer-brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .footer-logo {
+            width: 32px;
+            height: 32px;
+        }
+
+        .footer-name {
+            font-weight: 600;
+            font-size: 18px;
+            background: linear-gradient(135deg, var(--indigo), var(--cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .footer p {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .footer a {
+            color: var(--cyan);
+            text-decoration: none;
+        }
+
+        /* Comparison section */
+        .comparison {
+            margin-top: 60px;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 24px;
+            align-items: center;
+            opacity: 0;
+            animation: fadeSlideIn 0.8s ease-out 1.8s forwards;
+        }
+
+        .comparison-card {
+            background: var(--bg-surface);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 24px;
+        }
+
+        .comparison-card.old {
+            opacity: 0.7;
+        }
+
+        .comparison-card h4 {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .comparison-card.old h4 { color: var(--rose); }
+        .comparison-card.new h4 { color: var(--emerald); }
+
+        .comparison-list {
+            list-style: none;
+        }
+
+        .comparison-list li {
+            font-size: 13px;
+            color: var(--text-secondary);
+            padding: 6px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .comparison-list li::before {
+            content: '';
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .comparison-arrow {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .comparison-arrow svg {
+            width: 32px;
+            height: 32px;
+            color: var(--cyan);
+            animation: arrowPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes arrowPulse {
+            0%, 100% { transform: translateX(0); opacity: 1; }
+            50% { transform: translateX(4px); opacity: 0.7; }
+        }
+
+        .comparison-arrow span {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .flow-stages {
+                flex-wrap: wrap;
+            }
+            .stage {
+                flex: 1 1 calc(50% - 10px);
+                min-width: 200px;
+            }
+            .comparison {
+                grid-template-columns: 1fr;
+            }
+            .comparison-arrow {
+                transform: rotate(90deg);
+                margin: 16px 0;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .stage {
+                flex: 1 1 100%;
+            }
+            .flow-line {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+
+    <div class="container">
+        <header class="header">
+            <div class="header-badge">
+                <span>Vercel AI SDK × Signal Intelligence</span>
+            </div>
+            <h1>From Manual BD to<br>Autonomous Signal Detection</h1>
+            <p>How AI agents can identify, classify, and enrich buying signals at scale—turning weeks of manual research into real-time intelligence.</p>
+        </header>
+
+        <div class="flow-container">
+            <div class="flow-line">
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+                <div class="particle"></div>
+            </div>
+
+            <div class="flow-stages">
+                <!-- Stage 1: Data Sources -->
+                <div class="stage">
+                    <span class="stage-number">01 / INGEST</span>
+                    <div class="stage-card">
+                        <div class="stage-icon">
+                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/>
+                            </svg>
+                        </div>
+                        <h3 class="stage-title">Data Ingestion</h3>
+                        <p class="stage-desc">AI agents continuously pull from multiple sources—job APIs, government databases, web scraping.</p>
+                        <div class="source-tags">
+                            <span class="source-tag active">Reed API</span>
+                            <span class="source-tag active">Adzuna</span>
+                            <span class="source-tag">Contracts Finder</span>
+                            <span class="source-tag">Companies House</span>
+                            <span class="source-tag">Firecrawl</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stage 2: AI Processing -->
+                <div class="stage">
+                    <span class="stage-number">02 / PROCESS</span>
+                    <div class="stage-card">
+                        <div class="stage-icon">
+                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                            </svg>
+                        </div>
+                        <h3 class="stage-title">AI Classification</h3>
+                        <p class="stage-desc">Claude + custom tools classify companies, detect agencies, and extract structured signal data.</p>
+                        <div class="source-tags">
+                            <span class="source-tag">Agency Detection</span>
+                            <span class="source-tag">SIC Codes</span>
+                            <span class="source-tag">Tavily Search</span>
+                            <span class="source-tag active">Claude Sonnet</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stage 3: Signal Detection -->
+                <div class="stage">
+                    <span class="stage-number">03 / DETECT</span>
+                    <div class="stage-card">
+                        <div class="stage-icon">
+                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                        </div>
+                        <h3 class="stage-title">Signal Generation</h3>
+                        <p class="stage-desc">Pattern matching identifies 13+ signal types—from stale jobs to contract wins to leadership changes.</p>
+                        <div class="source-tags">
+                            <span class="source-tag active">Pain Score</span>
+                            <span class="source-tag">Confidence %</span>
+                            <span class="source-tag">Deduplication</span>
+                            <span class="source-tag">Urgency Rank</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stage 4: Enrichment -->
+                <div class="stage">
+                    <span class="stage-number">04 / ENRICH</span>
+                    <div class="stage-card">
+                        <div class="stage-icon">
+                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </div>
+                        <h3 class="stage-title">Contact Enrichment</h3>
+                        <p class="stage-desc">Automatic lookup of decision-makers with verified emails, phone numbers, and seniority classification.</p>
+                        <div class="source-tags">
+                            <span class="source-tag active">LeadMagic</span>
+                            <span class="source-tag active">Prospeo</span>
+                            <span class="source-tag">Email Verify</span>
+                            <span class="source-tag">LinkedIn</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stage 5: Output -->
+                <div class="stage">
+                    <span class="stage-number">05 / DELIVER</span>
+                    <div class="stage-card">
+                        <div class="stage-icon">
+                            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        </div>
+                        <h3 class="stage-title">Qualified Leads</h3>
+                        <p class="stage-desc">Scored, enriched signals delivered to your CRM—ready for outreach with full context.</p>
+                        <div class="source-tags">
+                            <span class="source-tag active">HubSpot Sync</span>
+                            <span class="source-tag">CSV Export</span>
+                            <span class="source-tag">Email Digest</span>
+                            <span class="source-tag">API Access</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Before/After Comparison -->
+        <div class="comparison">
+            <div class="comparison-card old">
+                <h4>
+                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                    Manual Process
+                </h4>
+                <ul class="comparison-list">
+                    <li>Hours scrolling job boards daily</li>
+                    <li>Spreadsheets with stale data</li>
+                    <li>Missing signals = missed deals</li>
+                    <li>No scalability beyond headcount</li>
+                    <li>Reactive, not proactive</li>
+                </ul>
+            </div>
+
+            <div class="comparison-arrow">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+                </svg>
+                <span>Transform</span>
+            </div>
+
+            <div class="comparison-card new">
+                <h4>
+                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                    </svg>
+                    AI-Powered
+                </h4>
+                <ul class="comparison-list">
+                    <li>24/7 autonomous monitoring</li>
+                    <li>Real-time signal detection</li>
+                    <li>Every signal captured & scored</li>
+                    <li>Infinite scale, same cost</li>
+                    <li>Proactive outreach triggers</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Signal Types -->
+        <div class="signals-section">
+            <div class="signals-header">
+                <h3>Detectable Buying Signals</h3>
+                <p>13+ signal types. Infinite industries.</p>
+            </div>
+
+            <div class="signals-grid">
+                <div class="signal-badge">
+                    <div class="signal-icon">📄</div>
+                    <div class="signal-info">
+                        <h4>New Job Posted</h4>
+                        <p>Active hiring = active budget</p>
+                    </div>
+                </div>
+                <div class="signal-badge">
+                    <div class="signal-icon">📜</div>
+                    <div class="signal-info">
+                        <h4>Contract Awarded</h4>
+                        <p>Gov contracts need delivery</p>
+                    </div>
+                </div>
+                <div class="signal-badge">
+                    <div class="signal-icon">💰</div>
+                    <div class="signal-info">
+                        <h4>Funding Announced</h4>
+                        <p>Capital = imminent hiring</p>
+                    </div>
+                </div>
+                <div class="signal-badge">
+                    <div class="signal-icon">👔</div>
+                    <div class="signal-info">
+                        <h4>Leadership Change</h4>
+                        <p>New leaders reshape teams</p>
+                    </div>
+                </div>
+                <div class="signal-badge">
+                    <div class="signal-icon">🏢</div>
+                    <div class="signal-info">
+                        <h4>Company Expansion</h4>
+                        <p>New offices need people</p>
+                    </div>
+                </div>
+                <div class="signal-badge">
+                    <div class="signal-icon">⏰</div>
+                    <div class="signal-info">
+                        <h4>Stale Job (30+ days)</h4>
+                        <p>Hard to fill = recruiter pain</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-banner">
+            <div class="stat">
+                <div class="stat-value">13+</div>
+                <div class="stat-label">Signal Types</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">11</div>
+                <div class="stat-label">Data Sources</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">24/7</div>
+                <div class="stat-label">Monitoring</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">∞</div>
+                <div class="stat-label">Scalability</div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-brand">
+                <svg class="footer-logo" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:#6366f1"/>
+                            <stop offset="100%" style="stop-color:#06b6d4"/>
+                        </linearGradient>
+                    </defs>
+                    <path d="M8 38V18C8 12.5 12.5 8 18 8C23.5 8 28 12.5 28 18V24C28 26 29.5 28 32 28C34.5 28 36 26 36 24V18C36 12.5 40.5 8 46 8" stroke="url(#logoGrad)" stroke-width="5" stroke-linecap="round" fill="none"/>
+                </svg>
+                <span class="footer-name">Signal Mentis</span>
+            </div>
+            <p>Built with Vercel AI SDK × Claude × Inngest</p>
+            <p style="margin-top: 8px;"><a href="https://mentisdigital.co.uk">mentisdigital.co.uk</a></p>
+        </footer>
+    </div>
+</body>
+</html>

@@ -12,7 +12,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { fetchContractAwards } from '@/lib/contracts-finder';
 import { fetchFTSAwards } from '@/lib/find-a-tender';
-import { ICPProfile, ICPSignalType } from '@/types';
+import { findOrCreateCompany } from '@/lib/companies/company-matcher';
+import { ICPProfile } from '@/types';
 
 export const maxDuration = 300;
 
@@ -184,6 +185,43 @@ export async function GET(request: NextRequest) {
             }, { onConflict: 'hash', ignoreDuplicates: true });
 
             if (!insertError) results.findATender.new++;
+
+            // Also write to company_pain_signals for Pain Dashboard
+            const { company } = await findOrCreateCompany({
+              name: signal.company_name,
+              domain: signal.company_domain || undefined,
+              location: signal.location || undefined,
+              user_id: icp.user_id,
+            });
+
+            const signalDetail = `${signal.signal_detail}${signal.buyer_name ? ` | Buyer: ${signal.buyer_name}` : ''}${signal.value ? ` | Value: £${signal.value.toLocaleString()}` : ''}`;
+
+            // Check if signal already exists to avoid duplicates
+            const { data: existingSignal } = await supabase
+              .from('company_pain_signals')
+              .select('id')
+              .eq('company_id', company.id)
+              .eq('icp_profile_id', icp.id)
+              .eq('pain_signal_type', 'contract_awarded')
+              .eq('signal_title', signal.signal_title)
+              .eq('source', 'find_a_tender')
+              .maybeSingle();
+
+            if (!existingSignal) {
+              await supabase.from('company_pain_signals').insert({
+                company_id: company.id,
+                icp_profile_id: icp.id,
+                pain_signal_type: 'contract_awarded',
+                signal_title: signal.signal_title,
+                signal_detail: signalDetail,
+                signal_value: signal.value || 0,
+                pain_score_contribution: 15,
+                urgency: 'short_term',
+                source: 'find_a_tender',
+                detected_at: new Date().toISOString(),
+                is_active: true,
+              });
+            }
           }
         }
         results.findATender.success = true;

@@ -69,6 +69,13 @@ export interface PainSignal {
   source_job_posting_id: string | null;
   source: string;
   job_url: string | null;
+  // Validation fields
+  validation_status?: string | null;
+  relevance_score?: number | null;
+  signal_explanation?: string | null;
+  relevance_reasoning?: string | null;
+  recommended_action?: string | null;
+  talking_points?: string[] | null;
 }
 
 export interface CompanyWithPain {
@@ -217,6 +224,41 @@ function SignalItem({ signal }: { signal: PainSignal }) {
             <p className="text-xs text-foreground mt-1 font-medium">
               {explanation.actionAdvice}
             </p>
+          </div>
+        )}
+        {signal.signal_explanation && (
+          <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+            <p className="text-xs font-medium text-blue-900 mb-1">
+              AI Analysis:
+            </p>
+            <p className="text-xs text-blue-800">
+              {signal.signal_explanation}
+            </p>
+          </div>
+        )}
+        {signal.validation_status && (
+          <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200 flex items-center gap-2 flex-wrap">
+            <Badge
+              className={`text-xs ${
+                signal.validation_status === 'validated'
+                  ? 'bg-green-100 text-green-800'
+                  : signal.validation_status === 'skipped'
+                    ? 'bg-gray-100 text-gray-800'
+                    : 'bg-red-100 text-red-800'
+              }`}
+            >
+              {signal.validation_status === 'validated' ? '✓ Validated' : signal.validation_status === 'skipped' ? '◦ Skipped' : '✗ Failed'}
+            </Badge>
+            {signal.relevance_score !== undefined && signal.relevance_score !== null && (
+              <span className="text-xs text-gray-600">
+                {Math.round(signal.relevance_score * 100)}% relevant
+              </span>
+            )}
+            {signal.recommended_action && (
+              <Badge variant="outline" className="text-xs">
+                {signal.recommended_action.replace(/_/g, ' ')}
+              </Badge>
+            )}
           </div>
         )}
       </div>

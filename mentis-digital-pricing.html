@@ -162,13 +162,19 @@
 
         .sm-pricing-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 24px;
-            max-width: 900px;
+            max-width: 1200px;
             margin: 0 auto;
         }
 
-        @media (max-width: 768px) {
+        @media (max-width: 1024px) {
+            .sm-pricing-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 640px) {
             .sm-pricing-grid {
                 grid-template-columns: 1fr;
             }
@@ -615,53 +621,73 @@
             <div class="section-header">
                 <span class="section-label">Signal Mentis</span>
                 <h2>Lead Intelligence Platform</h2>
-                <p>Find companies with hiring pain before your competitors. Self-serve access to pain signals and contact data.</p>
+                <p>Start free, scale as you grow. All plans include a 5-day trial with full access.</p>
             </div>
 
             <div class="sm-pricing-grid">
-                <!-- Free -->
-                <div class="sm-card">
-                    <h3 class="tier-name">Free</h3>
-                    <p class="price">£0</p>
-                    <p class="price-note">Forever free</p>
-                    <ul class="features-list">
-                        <li>1 ICP profile</li>
-                        <li>View pain signals</li>
-                        <li>Basic company data</li>
-                        <li class="disabled">No contact enrichment</li>
-                        <li class="disabled">No export</li>
-                        <li class="disabled">No CRM integration</li>
-                    </ul>
-                </div>
-
                 <!-- Starter -->
-                <div class="sm-card featured">
-                    <span class="badge">Best Value</span>
+                <div class="sm-card">
                     <h3 class="tier-name">Starter</h3>
-                    <p class="price">£99<span>/month</span></p>
-                    <p class="price-note">+ enrichment credits</p>
+                    <p class="price">£149<span>/month</span></p>
+                    <p class="price-note">Billed monthly</p>
                     <ul class="features-list">
-                        <li>3 ICP profiles</li>
-                        <li>All pain signal types</li>
-                        <li>100 contact enrichments/mo</li>
-                        <li>CSV export</li>
-                        <li>Email notifications</li>
-                        <li class="disabled">No CRM integration</li>
+                        <li>3 ICP Profiles</li>
+                        <li>100 Enrichments/mo</li>
+                        <li>Unlimited Signal Viewing</li>
+                        <li>CSV Export</li>
+                        <li>AI Classification</li>
+                        <li>HubSpot Integration</li>
+                        <li>Priority Support</li>
                     </ul>
                 </div>
 
-                <!-- Pro -->
-                <div class="sm-card">
-                    <h3 class="tier-name">Pro</h3>
-                    <p class="price">£249<span>/month</span></p>
-                    <p class="price-note">+ enrichment credits</p>
+                <!-- Growth -->
+                <div class="sm-card featured">
+                    <span class="badge">Most Popular</span>
+                    <h3 class="tier-name">Growth</h3>
+                    <p class="price">£299<span>/month</span></p>
+                    <p class="price-note">Billed monthly</p>
                     <ul class="features-list">
-                        <li>10 ICP profiles</li>
-                        <li>All pain signal types</li>
-                        <li>500 contact enrichments/mo</li>
-                        <li>CSV export</li>
-                        <li>HubSpot integration</li>
-                        <li>Priority support</li>
+                        <li>5 ICP Profiles</li>
+                        <li>300 Enrichments/mo</li>
+                        <li>Unlimited Signal Viewing</li>
+                        <li>CSV Export</li>
+                        <li>AI Classification</li>
+                        <li>HubSpot Integration</li>
+                        <li>Priority Support</li>
+                    </ul>
+                </div>
+
+                <!-- Scale -->
+                <div class="sm-card">
+                    <h3 class="tier-name">Scale</h3>
+                    <p class="price">£499<span>/month</span></p>
+                    <p class="price-note">Billed monthly</p>
+                    <ul class="features-list">
+                        <li>10 ICP Profiles</li>
+                        <li>500 Enrichments/mo</li>
+                        <li>Unlimited Signal Viewing</li>
+                        <li>CSV Export</li>
+                        <li>AI Classification</li>
+                        <li>HubSpot Integration</li>
+                        <li>Priority Support</li>
+                    </ul>
+                </div>
+
+                <!-- Enterprise -->
+                <div class="sm-card">
+                    <h3 class="tier-name">Enterprise</h3>
+                    <p class="price">Custom</p>
+                    <p class="price-note">Contact Sales</p>
+                    <ul class="features-list">
+                        <li>Unlimited ICP Profiles</li>
+                        <li>Custom Enrichments</li>
+                        <li>Unlimited Signal Viewing</li>
+                        <li>CSV Export</li>
+                        <li>AI Classification</li>
+                        <li>HubSpot Integration</li>
+                        <li>Priority Support</li>
+                        <li>Dedicated Account Manager</li>
                     </ul>
                 </div>
             </div>

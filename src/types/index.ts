@@ -190,6 +190,7 @@ export interface ICPProfile {
   id: string;
   user_id: string;
   name: string;
+  description?: string | null;
 
   // Industry & Roles
   industries: string[];
@@ -298,4 +299,54 @@ export interface IcpSlots {
   used: number;
   total: number;
   remaining: number;
+}
+
+// Company type (from companies table)
+export interface Company {
+  id: string;
+  name: string;
+  domain: string | null;
+  region: string | null;
+  location: string | null;
+  industry: string | null;
+  size?: string | null;
+  description?: string | null;
+  is_agency?: boolean | null;
+  agency_classified_at?: string | null;
+  agency_analysis?: Record<string, unknown> | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Company pain signal type (from company_pain_signals table)
+export interface CompanyPainSignal {
+  id: string;
+  company_id: string;
+  icp_profile_id: string;
+  pain_signal_type: string;
+  signal_title: string;
+  signal_detail: string;
+  source: string;
+  source_url?: string | null;
+  detected_at: string;
+  is_active: boolean;
+  pain_score_contribution?: number | null;
+  metadata?: Record<string, unknown> | null;
+  source_job_posting_id?: string | null;
+  source_contract_award_id?: string | null;
+  notified_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  // Validation fields
+  validation_status?: string | null;
+  validated_at?: string | null;
+  relevance_score?: number | null;
+  signal_explanation?: string | null;
+  relevance_reasoning?: string | null;
+  company_industry_detected?: string | null;
+  company_size_detected?: string | null;
+  opportunity_type?: string | null;
+  recommended_action?: string | null;
+  talking_points?: string[] | null;
+  validation_error?: string | null;
 }
