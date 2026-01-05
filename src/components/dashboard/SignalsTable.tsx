@@ -79,6 +79,18 @@ const validationStatusConfig: Record<string, { color: string; icon: React.ReactN
   },
 };
 
+const isGovernmentSignal = (source?: string | { name: string }) => {
+  if (!source) return false;
+  let sourceName = '';
+  if (typeof source === 'string') {
+    sourceName = source;
+  } else if (source && typeof source === 'object' && 'name' in source) {
+    sourceName = source.name;
+  }
+  const governmentSources = ['contracts_finder', 'find_a_tender', 'companies_house'];
+  return governmentSources.includes(sourceName);
+};
+
 export function SignalsTable({ signals, onExport }: SignalsTableProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [sortField, setSortField] = useState<SortField>('detected_at');
@@ -266,7 +278,7 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
                   {new Date(signal.detected_at).toLocaleDateString()}
                 </TableCell>
                 <TableCell>
-                  {signal.validation_status ? (
+                  {signal.validation_status && isGovernmentSignal(signal.source) ? (
                     <button
                       onClick={() => setSelectedSignal(signal)}
                       className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
@@ -287,7 +299,7 @@ export function SignalsTable({ signals, onExport }: SignalsTableProps) {
                       )}
                     </button>
                   ) : (
-                    <span className="text-xs text-muted-foreground">Not validated</span>
+                    <span className="text-xs text-muted-foreground">-</span>
                   )}
                 </TableCell>
                 <TableCell>

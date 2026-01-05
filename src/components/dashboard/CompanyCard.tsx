@@ -133,6 +133,12 @@ const isHighValueSignal = (signalType: string) =>
   signalType === 'contract_awarded_large' ||
   signalType === 'contract_awarded_multiple';
 
+const isGovernmentSignal = (source?: string) => {
+  if (!source) return false;
+  const governmentSources = ['contracts_finder', 'find_a_tender', 'companies_house'];
+  return governmentSources.includes(source);
+};
+
 const getPainIcon = (signalType: string) => {
   if (signalType.startsWith('hard_to_fill')) return <Flame className="h-4 w-4" />;
   if (signalType.includes('stale')) return <Clock className="h-4 w-4" />;
@@ -236,7 +242,7 @@ function SignalItem({ signal }: { signal: PainSignal }) {
             </p>
           </div>
         )}
-        {signal.validation_status && (
+        {signal.validation_status && isGovernmentSignal(signal.source) && (
           <div className="mt-2 p-2 bg-gray-50 rounded border border-gray-200 flex items-center gap-2 flex-wrap">
             <Badge
               className={`text-xs ${

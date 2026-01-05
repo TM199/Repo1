@@ -117,6 +117,7 @@ export interface Signal {
   is_new: boolean;
   hash: string | null;
   source?: { name: string };
+  source_type_name?: string; // e.g., 'contracts_finder', 'job_board', etc.
 }
 
 export interface UserSettings {
