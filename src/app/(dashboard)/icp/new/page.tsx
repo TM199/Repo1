@@ -205,11 +205,18 @@ export default function NewICPProfilePage() {
   };
 
   const toggleLocation = (location: string) => {
-    setLocations(
-      locations.includes(location)
-        ? locations.filter((l) => l !== location)
-        : [...locations, location]
-    );
+    if (location === '_all') {
+      // Toggle "All Locations" - exclusive with specific locations
+      setLocations(locations.includes('_all') ? [] : ['_all']);
+    } else {
+      // Toggle specific location - remove _all if present
+      const withoutAll = locations.filter((l) => l !== '_all');
+      setLocations(
+        withoutAll.includes(location)
+          ? withoutAll.filter((l) => l !== location)
+          : [...withoutAll, location]
+      );
+    }
   };
 
   const toggleSeniority = (level: string) => {
@@ -265,7 +272,7 @@ export default function NewICPProfilePage() {
     }
 
     if (locations.length === 0) {
-      setError('Select at least one location');
+      setError('Select at least one location or "All UK"');
       return;
     }
 
@@ -563,6 +570,17 @@ export default function NewICPProfilePage() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
+              <Badge
+                variant="outline"
+                className={`cursor-pointer transition-all ${
+                  locations.includes('_all')
+                    ? 'bg-[#635BFF] text-white border-[#635BFF]'
+                    : 'bg-[#F6F9FC] border-[#E3E8EE] hover:border-[#635BFF]'
+                }`}
+                onClick={() => toggleLocation('_all')}
+              >
+                All UK
+              </Badge>
               {LOCATIONS.map((location) => (
                 <Badge
                   key={location}

@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const { company_name, company_domain, batch } = body;
+  const { company_name, company_domain, batch, forceResearch } = body;
 
   const adminSupabase = createAdminClient();
 
@@ -143,11 +143,16 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    console.log(`[classify] Starting classification for: ${company.name}`);
+    // ALWAYS force re-search for domain - never trust stored domains
+    // This ensures we get the correct domain even if a wrong one was previously saved
+    const shouldForceResearch = true; // Always search fresh
+
+    console.log(`[classify] Starting classification for: ${company.name} (forceResearch=${shouldForceResearch}, storedDomain=${company.domain})`);
 
     // Call the AI classifier
+    // Always search for a new domain to ensure accuracy
     const result = await classifyCompany(company.name, {
-      domain: company.domain || company_domain || undefined,
+      domain: shouldForceResearch ? undefined : (company.domain || company_domain || undefined),
       useTools: true,
     });
 
@@ -162,8 +167,8 @@ export async function POST(request: NextRequest) {
       agency_classification_source: 'ai',
     };
 
-    // Only update domain if AI found one and we don't already have one
-    if (result.domain && !company.domain) {
+    // Update domain if AI found one (always update if shouldForceResearch, or if no domain exists)
+    if (result.domain && (shouldForceResearch || !company.domain)) {
       updates.domain = result.domain;
       updates.domain_source = 'ai_tavily';
       updates.domain_confidence = 80;

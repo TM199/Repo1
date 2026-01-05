@@ -55,9 +55,12 @@ export async function POST(
     }
 
     // Get locations and roles from profile
-    const locations = icpProfile.locations.length > 0
-      ? icpProfile.locations
-      : ['London', 'Manchester', 'Birmingham'];
+    const isAllLocations = icpProfile.locations.includes('_all');
+    const locations = isAllLocations
+      ? [] // Empty array means "all UK" - no location filter
+      : icpProfile.locations.length > 0
+        ? icpProfile.locations
+        : ['London', 'Manchester', 'Birmingham'];
 
     const roles = icpProfile.specific_roles || [];
 
@@ -73,43 +76,72 @@ export async function POST(
     // ==========================================
     // Queue tasks for distributed processing
     // ==========================================
-    console.log(`[ICP Scan] Queuing ${roles.length} roles × ${locations.length} locations for distributed processing`);
+    const locationLabel = isAllLocations ? 'All UK' : `${locations.length} locations`;
+    console.log(`[ICP Scan] Queuing ${roles.length} roles × ${locationLabel} for distributed processing`);
 
     const batchId = crypto.randomUUID();
     const tasksToCreate: any[] = [];
     const now = new Date();
 
-    // Create queue entries for each role+location combination
+    // Create queue entries for each role (and location if specified)
     // Process them immediately (scheduled_for = now)
     for (const role of roles) {
-      for (const location of locations) {
-        // Queue Reed task
+      if (isAllLocations) {
+        // Single task per role with no location filter
         tasksToCreate.push({
           icp_profile_id: id,
           batch_id: batchId,
           task_type: 'job_fetch_reed',
           keywords: role,
-          location: location,
+          location: null, // No location filter
           status: 'pending',
           priority: 1,
           attempts: 0,
           max_attempts: 3,
-          scheduled_for: now.toISOString(), // Process ASAP
+          scheduled_for: now.toISOString(),
         });
 
-        // Queue Adzuna task
         tasksToCreate.push({
           icp_profile_id: id,
           batch_id: batchId,
           task_type: 'job_fetch_adzuna',
           keywords: role,
-          location: location,
+          location: null, // No location filter
           status: 'pending',
           priority: 1,
           attempts: 0,
           max_attempts: 3,
-          scheduled_for: new Date(now.getTime() + 60000).toISOString(), // 1 min after Reed
+          scheduled_for: new Date(now.getTime() + 60000).toISOString(),
         });
+      } else {
+        // Task per role × location combination
+        for (const location of locations) {
+          tasksToCreate.push({
+            icp_profile_id: id,
+            batch_id: batchId,
+            task_type: 'job_fetch_reed',
+            keywords: role,
+            location: location,
+            status: 'pending',
+            priority: 1,
+            attempts: 0,
+            max_attempts: 3,
+            scheduled_for: now.toISOString(),
+          });
+
+          tasksToCreate.push({
+            icp_profile_id: id,
+            batch_id: batchId,
+            task_type: 'job_fetch_adzuna',
+            keywords: role,
+            location: location,
+            status: 'pending',
+            priority: 1,
+            attempts: 0,
+            max_attempts: 3,
+            scheduled_for: new Date(now.getTime() + 60000).toISOString(),
+          });
+        }
       }
     }
 
@@ -163,11 +195,11 @@ export async function POST(
       job_boards: {
         enabled: true,
         sources: ['Reed.co.uk', 'Adzuna'],
-        searches: `${roles.length} roles × ${locations.length} locations`,
+        searches: isAllLocations ? `${roles.length} roles × All UK` : `${roles.length} roles × ${locations.length} locations`,
         total_searches: tasksToCreate.length,
         history_window: '60 days',
         roles_being_searched: roles.slice(0, 5), // Show first 5 roles
-        locations_being_searched: locations,
+        locations_being_searched: isAllLocations ? ['All UK'] : locations,
       },
       contracts_and_tenders: {
         enabled: icpProfile.signal_types.includes('contracts_awarded') || icpProfile.signal_types.includes('tenders'),
@@ -185,14 +217,19 @@ export async function POST(
       },
     };
 
+    const locationsDisplay = isAllLocations ? 'All UK (no location filter)' : locations.join(', ');
+    const searchesDisplay = isAllLocations
+      ? `${tasksToCreate.length} (${roles.length} roles × 2 sources)`
+      : `${tasksToCreate.length} (${roles.length} roles × ${locations.length} locations × 2 sources)`;
+
     const userMessage = `
 🔍 **Search Initiated for "${icpProfile.name}"**
 
 **Job Board Searches (60 days of history)**
 • Sources: Reed.co.uk & Adzuna
 • Roles: ${roles.slice(0, 3).join(', ')}${roles.length > 3 ? ` + ${roles.length - 3} more` : ''}
-• Locations: ${locations.join(', ')}
-• Total searches: ${tasksToCreate.length} (${roles.length} roles × ${locations.length} locations × 2 sources)
+• Locations: ${locationsDisplay}
+• Total searches: ${searchesDisplay}
 
 ${searchSummary.contracts_and_tenders.enabled ? `
 **Government Contracts & Tenders**

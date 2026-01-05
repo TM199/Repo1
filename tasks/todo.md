@@ -275,3 +275,152 @@ After migration and deployment:
 **Implementation Date:** January 4, 2026
 **Architecture:** Option B - Deferred Company Creation (User-Specific)
 **Status:** Code Complete - Awaiting SQL Migration ✅
+
+---
+
+# Bug Fix: Agency Classifier Returns Wrong Website (LeadIQ for Bread Factory)
+
+## Problem
+When running "check if agency" on "Bread Factory", the website was populated with `leadiq.com` instead of the actual Bread Factory website.
+
+## Root Cause
+The `searchCompanyWebsite` function in `src/lib/ai/tavily.ts` (lines 6-41) **blindly takes the first Tavily search result** without validating that the domain actually belongs to the company being searched.
+
+```typescript
+// Line 24-26 - THE BUG
+const topResult = response.results[0];  // Takes first result blindly!
+const url = new URL(topResult.url);
+const domain = url.hostname.replace(/^www\./, '');
+```
+
+Tavily returned LeadIQ (a B2B data tool) as the first result, and the code just accepted it.
+
+## Fix Plan
+
+- [x] **1. Add B2B data tool domain exclusions** - Exclude known false positives (leadiq.com, clearbit.com, zoominfo.com, apollo.io, lusha.com, etc.)
+- [x] **2. Add domain relevance scoring** - Score results based on how well domain/title matches company name
+- [x] **3. Return best matching result** - Instead of first result, return highest-scoring valid result
+- [x] **4. Bulletproof Claude prompt** - Complete rewrite with step-by-step framework
+
+---
+
+## Review - COMPLETED ✅
+
+### Changes Made (1 file: `src/lib/ai/tavily.ts`)
+
+#### 1. Added Comprehensive Domain Exclusion List (60+ domains)
+- B2B Sales Tools: leadiq, clearbit, zoominfo, apollo, lusha, cognism, etc.
+- Job Boards: linkedin, indeed, glassdoor, reed, totaljobs, etc.
+- Business Directories: yelp, yell, trustpilot, crunchbase, etc.
+- Company Registries: companieshouse.gov.uk, duedil, opencorporates, etc.
+- News/Media: bbc, guardian, reuters, bloomberg, etc.
+- Social Media: facebook, twitter, youtube, etc.
+
+#### 2. Added Relevance Scoring Algorithm
+```
+Score calculation:
+- +30 points: Company name word appears in domain
+- +20 points: Domain starts with first company word
+- +50 points: Perfect domain match (breadfactory.com or bread-factory.com)
+- +10 points: Company word in page title
+- +25 points: Full company name in title
+- +2 points: Company word in content
+- -30 points: Directory/listing patterns detected
+```
+
+#### 3. Multiple Search Queries
+Now runs 2 parallel searches for better coverage:
+- `"{companyName}" official website UK`
+- `{companyName} company website contact`
+
+#### 4. Bulletproof Claude Analysis Prompt
+Complete rewrite with:
+- Step-by-step classification framework
+- Definitive YES/NO signal lists
+- Edge case handling tables
+- Confidence calibration guide
+- Common mistakes to avoid section
+
+### Why This Fixes the Bug
+
+**Before**: Searched for "Bread Factory" → LeadIQ was first result → Accepted blindly
+**After**:
+1. LeadIQ would be excluded (in B2B data tools list)
+2. Even if not excluded, it would score 0 (no "bread" or "factory" in domain)
+3. Actual breadfactory.co.uk would score high (perfect match bonus)
+
+### Build Status
+✅ TypeScript build passes with no errors
+
+### Implementation Date
+January 5, 2026
+
+---
+
+# Add "All Locations" Option to ICP Search
+
+## Summary
+Add an option in the ICP search form that allows users to search ALL locations instead of specific cities. When selected, the API calls to Reed and Adzuna will omit the location parameter entirely, returning more results.
+
+## Plan
+
+### 1. UI Changes - `page.tsx`
+- [ ] Add "All Locations" as the first badge in the locations section
+- [ ] When "All Locations" is clicked, deselect all other locations and store `['_all']`
+- [ ] When any specific location is clicked while "All Locations" is selected, deselect "All Locations"
+- [ ] Update validation to allow `['_all']` as valid
+
+### 2. Scan Route - `route.ts`
+- [ ] When locations contains `'_all'`, create ONE task per role with `location: null`
+- [ ] Update message to reflect "All UK" instead of listing locations
+
+### 3. Worker - `process-job-queue.ts`
+- [ ] When `task.location` is null/empty, pass empty array `[]` to search functions
+
+### 4. Reed API - `job-boards.ts`
+- [ ] In `searchReedMultipleKeywords`: if locations array is empty, search without location
+- [ ] In `searchReedParallel`: if locations is empty, do single search without locationName param
+
+### 5. Adzuna API - `adzuna.ts`
+- [ ] In `searchAdzunaMultipleKeywords`: if locations is empty, search without location
+- [ ] In `searchAdzunaForKeyword`: if locations is empty, do single search without where param
+
+## Files to Modify
+1. `src/app/(dashboard)/icp/new/page.tsx` - UI form
+2. `src/app/api/icp/[id]/scan/route.ts` - Task creation
+3. `src/inngest/functions/process-job-queue.ts` - Task processing
+4. `src/lib/job-boards.ts` - Reed API calls
+5. `src/lib/adzuna.ts` - Adzuna API calls
+
+## Review - COMPLETED ✅
+
+### Changes Made (5 files)
+
+#### 1. UI - `src/app/(dashboard)/icp/new/page.tsx`
+- Added "All UK" badge as first option in locations section
+- Modified `toggleLocation()` to handle exclusive selection (All UK vs specific cities)
+- Updated validation error message
+
+#### 2. Scan Route - `src/app/api/icp/[id]/scan/route.ts`
+- Detects `_all` in locations array
+- Creates ONE task per role (not role × location) when All UK selected
+- Sets `location: null` on tasks
+- Updated user messages to show "All UK (no location filter)"
+
+#### 3. Worker - `src/inngest/functions/process-job-queue.ts`
+- When `task.location` is null, passes empty array `[]` to search functions
+- Updated activity log to show "All UK" when location is null
+
+#### 4. Reed API - `src/lib/job-boards.ts`
+- `searchReedParallel()`: If locations array is empty, does single search without `locationName` param
+
+#### 5. Adzuna API - `src/lib/adzuna.ts`
+- Made `where` param optional in `searchAdzunaJobs()`
+- `searchAdzunaForKeyword()`: If locations array is empty, does single search without `where` param
+- Made `where` optional in `fetchAllAdzunaResults()`
+
+### Build Status
+✅ TypeScript build passes with no errors
+
+### Implementation Date
+January 5, 2026

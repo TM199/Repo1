@@ -82,12 +82,13 @@ export function SignalCard({ signal }: SignalCardProps) {
     if (!signal.company_name) return;
     setClassifying(true);
     try {
+      // Always force re-search for domain to ensure we get the correct website
       const response = await fetch('/api/companies/classify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           company_name: signal.company_name,
-          company_domain: signal.company_domain,
+          forceResearch: true, // Always re-search for domain
         }),
       });
       const data = await response.json();

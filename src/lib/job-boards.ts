@@ -681,6 +681,7 @@ export const UK_NATIONAL_LOCATIONS = [
 /**
  * Search Reed in PARALLEL across multiple locations for a keyword
  * Much faster than sequential searching - used for ICP scans
+ * If locations is empty, searches without location filter (all UK)
  */
 export async function searchReedParallel(params: {
   keywords: string;
@@ -699,6 +700,39 @@ export async function searchReedParallel(params: {
 
   const postedWithin = params.postedWithin || 30;
   const limitPerLocation = params.limitPerLocation || 200; // Higher default for parallel searches
+
+  // If no locations specified, do a single search without location filter
+  if (params.locations.length === 0) {
+    try {
+      const url = new URL(REED_API_URL);
+      url.searchParams.set('keywords', params.keywords);
+      // No locationName param = search all UK
+      url.searchParams.set('postedWithin', String(postedWithin));
+      url.searchParams.set('resultsToTake', String(limitPerLocation));
+
+      if (params.directEmployerOnly !== false) {
+        url.searchParams.set('postedByDirectEmployer', 'true');
+      }
+
+      const response = await fetch(url.toString(), {
+        headers: {
+          Authorization: 'Basic ' + Buffer.from(`${apiKey}:`).toString('base64'),
+        },
+      });
+
+      if (!response.ok) {
+        console.error(`[job-boards] Reed API error (all UK):`, response.status);
+        return [];
+      }
+
+      const data: ReedSearchResponse = await response.json();
+      console.log(`[job-boards] searchReedParallel("${params.keywords}"): ${data.results?.length || 0} jobs (all UK)`);
+      return data.results || [];
+    } catch (error) {
+      console.error(`[job-boards] Reed search error (all UK):`, error);
+      return [];
+    }
+  }
 
   // Launch all searches in parallel
   const searchPromises = params.locations.map(async (location) => {

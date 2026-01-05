@@ -3,6 +3,157 @@ import { tavily } from '@tavily/core';
 
 const tavilyClient = tavily({ apiKey: process.env.TAVILY_API_KEY! });
 
+/**
+ * EXCLUDED DOMAINS
+ * These are B2B data tools, job boards, directories, and other sites that
+ * appear in search results but are NOT company websites.
+ */
+const EXCLUDED_DOMAINS = new Set([
+  // B2B Sales/Data Tools (often appear when searching companies)
+  'leadiq.com', 'clearbit.com', 'zoominfo.com', 'apollo.io', 'lusha.com',
+  'cognism.com', 'seamless.ai', 'hunter.io', 'rocketreach.co', 'contactout.com',
+  'kaspr.io', 'salesintel.io', 'uplead.com', 'snov.io', 'findthatlead.com',
+  'leadfeeder.com', 'datanyze.com', 'discoverorg.com', 'd-and-b.com', 'dnb.com',
+
+  // Job Boards & Recruitment Platforms
+  'linkedin.com', 'uk.linkedin.com', 'in.linkedin.com', 'de.linkedin.com', 'fr.linkedin.com',
+  'indeed.com', 'glassdoor.com', 'reed.co.uk', 'totaljobs.com',
+  'cv-library.co.uk', 'monster.com', 'jobsite.co.uk', 'cwjobs.co.uk', 'adzuna.co.uk',
+  'simplyhired.com', 'careerbuilder.com', 'ziprecruiter.com', 'jooble.org',
+
+  // Business Directories & Review Sites
+  'yelp.com', 'yell.com', 'trustpilot.com', 'g2.com', 'capterra.com',
+  'thomasnet.com', 'manta.com', 'bbb.org', 'yellowpages.com', 'hotfrog.co.uk',
+  'cylex-uk.co.uk', 'scoot.co.uk', 'thebestof.co.uk', 'freeindex.co.uk',
+
+  // Company Data/Registry Sites
+  'companieshouse.gov.uk', 'find-and-update.company-information.service.gov.uk',
+  'duedil.com', 'endole.co.uk', 'companycheck.co.uk', 'opencorporates.com',
+  'crunchbase.com', 'pitchbook.com', 'owler.com', 'craft.co',
+
+  // News/Media Sites
+  'bbc.co.uk', 'theguardian.com', 'telegraph.co.uk', 'independent.co.uk',
+  'dailymail.co.uk', 'mirror.co.uk', 'express.co.uk', 'standard.co.uk',
+  'reuters.com', 'bloomberg.com', 'ft.com', 'forbes.com', 'businessinsider.com',
+
+  // Social Media
+  'facebook.com', 'twitter.com', 'instagram.com', 'youtube.com', 'tiktok.com',
+  'pinterest.com', 'reddit.com', 'quora.com',
+
+  // General Reference
+  'wikipedia.org', 'wikimedia.org', 'britannica.com', 'dictionary.com',
+
+  // Government Sites (not company sites)
+  'gov.uk', 'nhs.uk', 'police.uk',
+]);
+
+/**
+ * Check if a domain should be excluded
+ */
+function isExcludedDomain(domain: string): boolean {
+  const cleanDomain = domain.toLowerCase().replace(/^www\./, '');
+
+  // Direct match
+  if (EXCLUDED_DOMAINS.has(cleanDomain)) return true;
+
+  // Check if it's a subdomain of excluded domain
+  for (const excluded of EXCLUDED_DOMAINS) {
+    if (cleanDomain.endsWith(`.${excluded}`)) return true;
+  }
+
+  return false;
+}
+
+/**
+ * Calculate relevance score for a search result
+ * Higher score = more likely to be the actual company website
+ */
+// Common words to ignore when scoring (they appear everywhere)
+const STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'that', 'this', 'are', 'was', 'were',
+  'been', 'being', 'have', 'has', 'had', 'will', 'would', 'could', 'should',
+  'may', 'might', 'must', 'shall', 'can', 'need', 'our', 'your', 'their',
+  'its', 'his', 'her', 'all', 'any', 'both', 'each', 'few', 'more', 'most',
+  'other', 'some', 'such', 'than', 'too', 'very', 'just', 'but', 'not',
+  'only', 'own', 'same', 'into', 'over', 'also', 'new', 'one', 'two',
+]);
+
+function calculateRelevanceScore(
+  companyName: string,
+  result: { url: string; title: string; content: string }
+): number {
+  let score = 0;
+  const cleanCompanyName = companyName.toLowerCase()
+    .replace(/^the\s+/i, '') // Remove leading "The"
+    .replace(/\s+(ltd|limited|plc|llp|inc|corp|co|company|uk|group|holdings)\.?$/gi, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .trim();
+
+  // Filter out short words and stop words
+  const companyWords = cleanCompanyName.split(/\s+/)
+    .filter(w => w.length > 2)
+    .filter(w => !STOP_WORDS.has(w));
+  const domain = new URL(result.url).hostname.toLowerCase().replace(/^www\./, '');
+  const title = result.title.toLowerCase();
+  const content = result.content.toLowerCase();
+
+  // DOMAIN SCORING (most important)
+  // Check if company name words appear in domain
+  const domainWithoutTld = domain.replace(/\.(com|co\.uk|org|org\.uk|net|io|uk|eu|biz|info)$/, '');
+
+  for (const word of companyWords) {
+    if (domainWithoutTld.includes(word)) {
+      score += 30; // Strong signal: word in domain
+    }
+  }
+
+  // Bonus: domain starts with first company word
+  if (companyWords[0] && domainWithoutTld.startsWith(companyWords[0])) {
+    score += 20;
+  }
+
+  // Bonus: domain is close match to company name (e.g., "bread-factory.co.uk" for "Bread Factory")
+  const compactName = companyWords.join('');
+  const hyphenatedName = companyWords.join('-');
+  if (domainWithoutTld === compactName || domainWithoutTld === hyphenatedName) {
+    score += 50; // Perfect match
+  }
+
+  // TITLE SCORING
+  for (const word of companyWords) {
+    if (title.includes(word)) {
+      score += 10; // Word in title
+    }
+  }
+
+  // Bonus: title contains full company name
+  if (title.includes(cleanCompanyName)) {
+    score += 25;
+  }
+
+  // CONTENT SCORING (lower weight - can be noisy)
+  for (const word of companyWords) {
+    if (content.includes(word)) {
+      score += 2; // Word mentioned in content
+    }
+  }
+
+  // NEGATIVE SIGNALS
+  // Result is about multiple companies (directory listing)
+  const directoryPatterns = [
+    /\d+\s*(companies|businesses|results)/i,
+    /list of/i, /directory/i, /comparison/i, /vs\./i,
+    /top \d+/i, /best \d+/i,
+  ];
+  for (const pattern of directoryPatterns) {
+    if (pattern.test(title) || pattern.test(content.slice(0, 200))) {
+      score -= 30;
+    }
+  }
+
+  return Math.max(0, score);
+}
+
 export async function searchCompanyWebsite(companyName: string): Promise<{
   domain: string | null;
   confidence: number;
@@ -10,29 +161,84 @@ export async function searchCompanyWebsite(companyName: string): Promise<{
   snippets: string[];
 }> {
   try {
-    const response = await tavilyClient.search(
-      `${companyName} UK official website homepage`,
-      {
-        searchDepth: 'basic',
-        maxResults: 5,
-        includeAnswer: true,
-      }
-    );
+    console.log(`[Tavily] Searching for website: ${companyName}`);
 
-    // Extract domain from top result
-    if (response.results && response.results.length > 0) {
-      const topResult = response.results[0];
-      const url = new URL(topResult.url);
-      const domain = url.hostname.replace(/^www\./, '');
+    // Clean company name for better search (remove "The", suffixes)
+    const searchName = companyName
+      .replace(/^the\s+/i, '')
+      .replace(/\s+(ltd|limited|plc|llp|inc|corp|co|company|uk|group|holdings)\.?$/gi, '')
+      .trim();
+
+    console.log(`[Tavily] Search name cleaned: "${companyName}" -> "${searchName}"`);
+
+    // Run multiple search queries for better coverage
+    const searches = await Promise.all([
+      tavilyClient.search(
+        `"${searchName}" official website`,
+        { searchDepth: 'basic', maxResults: 5, includeAnswer: false }
+      ),
+      tavilyClient.search(
+        `${searchName} company homepage`,
+        { searchDepth: 'basic', maxResults: 5, includeAnswer: false }
+      ),
+      tavilyClient.search(
+        `${searchName} UK contact us`,
+        { searchDepth: 'basic', maxResults: 5, includeAnswer: false }
+      ),
+    ]);
+
+    // Combine and deduplicate results
+    const allResults = searches.flatMap(s => s.results || []);
+    const seenUrls = new Set<string>();
+    const uniqueResults = allResults.filter(r => {
+      const dominated = seenUrls.has(r.url);
+      seenUrls.add(r.url);
+      return !dominated;
+    });
+
+    console.log(`[Tavily] Found ${uniqueResults.length} unique results for ${companyName}`);
+
+    // Score and filter results
+    const scoredResults = uniqueResults
+      .map(result => {
+        const url = new URL(result.url);
+        const domain = url.hostname.replace(/^www\./, '');
+        const score = calculateRelevanceScore(companyName, result);
+        const excluded = isExcludedDomain(domain);
+
+        return { result, domain, score, excluded };
+      })
+      .filter(r => !r.excluded) // Remove excluded domains
+      .filter(r => r.score > 0)  // Must have some relevance
+      .sort((a, b) => b.score - a.score); // Sort by score descending
+
+    console.log(`[Tavily] Scored results:`, scoredResults.map(r => ({
+      domain: r.domain,
+      score: r.score,
+      title: r.result.title.slice(0, 50),
+    })));
+
+    if (scoredResults.length > 0) {
+      const best = scoredResults[0];
+
+      // Confidence based on score
+      let confidence = 50;
+      if (best.score >= 100) confidence = 90;
+      else if (best.score >= 70) confidence = 80;
+      else if (best.score >= 40) confidence = 70;
+      else if (best.score >= 20) confidence = 60;
+
+      console.log(`[Tavily] Best match for ${companyName}: ${best.domain} (score: ${best.score}, confidence: ${confidence})`);
 
       return {
-        domain,
-        confidence: 80,
+        domain: best.domain,
+        confidence,
         source: 'tavily',
-        snippets: response.results.map(r => r.content).slice(0, 3),
+        snippets: scoredResults.slice(0, 3).map(r => r.result.content),
       };
     }
 
+    console.log(`[Tavily] No valid results found for ${companyName}`);
     return { domain: null, confidence: 0, source: 'tavily', snippets: [] };
   } catch (error) {
     console.error('[Tavily] Search failed:', error);
@@ -120,79 +326,91 @@ export async function analyzeCompanyWebsite(domain: string, companyName: string)
     const { object: analysis } = await generateObject({
       model: anthropic('claude-sonnet-4-20250514'),
       schema: z.object({
-        isRecruitmentAgency: z.boolean().describe('True if this is a recruitment/staffing agency'),
-        confidence: z.number().min(0).max(100).describe('Confidence percentage'),
-        reasoning: z.string().describe('Explanation of the classification decision'),
-        evidence: z.array(z.string()).describe('Specific evidence from the website'),
+        isRecruitmentAgency: z.boolean().describe('True if company specializes in recruitment/hiring activities'),
+        confidence: z.number().min(0).max(100).describe('How certain you are'),
+        reasoning: z.string().describe('Brief explanation of your decision'),
+        evidence: z.array(z.string()).describe('Key evidence from the website'),
       }),
-      prompt: `Analyze if "${companyName}" (${domain}) is a RECRUITMENT/STAFFING AGENCY.
+      prompt: `# TASK: Does "${companyName}" specialize in recruitment/hiring activities?
 
-WEBSITE CONTENT:
+## COMPANY INFO
+- Name: ${companyName}
+- Domain: ${domain}
+
+## WEBSITE CONTENT
 ${contentToAnalyze}
 
 ---
 
-## CLASSIFICATION RULES
+# CLASSIFICATION: RECRUITMENT-FOCUSED BUSINESS?
 
-### MARK AS RECRUITMENT AGENCY (isRecruitmentAgency: true) IF:
+## THE QUESTION
 
-The company's CORE BUSINESS MODEL is connecting job seekers with employers for a fee. Look for:
+Is this company's **PRIMARY BUSINESS** focused on recruitment, hiring, or connecting job seekers with employers?
 
-1. **Two-sided marketplace language:**
-   - "Looking for a job? / Looking to hire?"
-   - Separate "Candidates" and "Employers/Clients" sections
-   - "Register your CV" + "Post a vacancy"
+**Mark as YES (isRecruitmentAgency = true)** if ANY of these apply:
 
-2. **Placement/staffing language:**
-   - "We place candidates", "We find talent for you"
-   - "Staffing solutions", "Contract staffing", "Temp-to-perm"
-   - "Recruitment consultants", "Our recruiters"
-   - "We've placed X,000 candidates"
+### 1. RECRUITMENT AGENCIES
+- Places candidates at client companies
+- Staffing/temp agencies
+- Executive search firms
+- Examples: Hays, Michael Page, Robert Half, Adecco
 
-3. **Revenue model indicators:**
-   - Charges employers fees to find candidates
-   - Provides contractors/temps on their payroll
-   - "Our clients include [company logos]"
+### 2. JOB BOARDS & CAREER PLATFORMS
+- Operates a job board where employers post vacancies
+- Career/jobs website
+- Job aggregators
+- Examples: Indeed, Glassdoor, eFinancialCareers, Totaljobs, Reed, Monster
 
-**EXAMPLES OF TRUE AGENCIES:**
-- Hays, Robert Half, Michael Page, Randstad, Adecco
-- Any company saying "we recruit for our clients"
-- Staffing firms that employ contractors
+### 3. RECRUITMENT TECHNOLOGY
+- ATS (Applicant Tracking Systems)
+- Recruitment software
+- Hiring platforms
+- Examples: Workday Recruiting, Greenhouse, Lever, SmartRecruiters
 
-### MARK AS NOT AN AGENCY (isRecruitmentAgency: false) IF:
+### 4. HR/TALENT SERVICES
+- RPO (Recruitment Process Outsourcing)
+- Talent acquisition consulting
+- Employer branding for hiring
+- Background check/screening services for hiring
 
-1. **Regular company with careers page:**
-   - Has "Join our team" or "Work with us" for THEIR OWN jobs
-   - Lists internal positions only
-   - This is just normal hiring, NOT an agency
+---
 
-2. **HR Software/Tech companies:**
-   - Builds recruitment software, ATS, job boards
-   - "Our platform helps recruiters..."
-   - Sells tools, doesn't do recruiting
+## Mark as NO (isRecruitmentAgency = false) if:
 
-3. **Consulting/Professional services:**
-   - Provides consulting, IT services, engineering services
-   - Delivers projects with their own employees
-   - Not placing people at client sites permanently
+1. **Normal company with careers page** - Just hiring for their own jobs
+2. **Non-recruitment business** - Sells products/services unrelated to hiring
+3. **General HR software** - Payroll, benefits, time tracking (not hiring-focused)
+4. **Consulting firms** - Deliver projects with own employees (Accenture, Deloitte)
+5. **Outsourcing/BPO** - Run operations, don't place candidates (call centers)
 
-4. **Outsourcing companies:**
-   - Runs operations for clients (call centers, IT support)
-   - Employs people to deliver services, not place them
+---
 
-**EXAMPLES OF NON-AGENCIES:**
-- Tesco (retailer with careers page)
-- Workday (HR software)
-- Accenture (consulting, employs own staff)
-- Indeed (job board, doesn't place candidates)
+## KEY DISTINCTION
 
-### CONFIDENCE GUIDELINES:
-- 90-100%: Crystal clear from website (explicit "recruitment agency" statement)
-- 70-89%: Strong evidence (multiple indicators present)
-- 50-69%: Mixed signals (some indicators, but unclear)
-- Below 50%: Insufficient evidence (default to NOT agency)
+**YES** = Their business IS recruitment/hiring
+- "We help companies find talent"
+- "Post your job / Find your next role"
+- "We place candidates"
 
-Analyze the content and make your determination.`,
+**NO** = They just HAVE jobs (like everyone else)
+- "Join our team" / "Careers at [Company]"
+- They're hiring for themselves, not others
+
+---
+
+## CONFIDENCE GUIDE
+
+| Score | When to Use |
+|-------|-------------|
+| 90-100% | Clearly a recruitment/jobs business |
+| 70-89% | Strong signals (job board, staffing language) |
+| 50-69% | Some recruitment activity but unclear if primary |
+| 0-49% | Normal company, mark as NO |
+
+---
+
+Analyze and classify "${companyName}".`,
     });
 
     console.log(`[Website Analysis] Result for ${companyName}: isAgency=${analysis.isRecruitmentAgency}, confidence=${analysis.confidence}`);

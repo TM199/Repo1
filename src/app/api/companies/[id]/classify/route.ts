@@ -38,11 +38,17 @@ export async function POST(
   }
 
   try {
-    console.log(`[classify] Starting classification for: ${company.name}`);
+    // Check if user wants to force re-search for domain
+    const body = await request.json().catch(() => ({}));
+    const forceResearch = body.forceResearch === true;
+
+    console.log(`[classify] Starting classification for: ${company.name} (forceResearch=${forceResearch})`);
 
     // Call the AI classifier
+    // If forceResearch=true OR no domain exists, search for a new domain
+    // Otherwise use the existing domain
     const result = await classifyCompany(company.name, {
-      domain: company.domain || undefined,
+      domain: forceResearch ? undefined : (company.domain || undefined),
       useTools: true,
     });
 
@@ -57,8 +63,8 @@ export async function POST(
       agency_classification_source: 'ai',
     };
 
-    // Only update domain if AI found one and we don't already have one
-    if (result.domain && !company.domain) {
+    // Update domain if AI found one (always update if forceResearch, or if no domain exists)
+    if (result.domain && (forceResearch || !company.domain)) {
       updates.domain = result.domain;
       updates.domain_source = 'ai_tavily';
       updates.domain_confidence = 80; // Tavily default confidence

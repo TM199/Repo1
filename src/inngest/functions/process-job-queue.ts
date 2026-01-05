@@ -185,7 +185,7 @@ export const processJobQueueFunction = inngest.createFunction(
       if (isReed) {
         const jobs = await searchReedMultipleKeywords({
           keywords: [task.keywords],
-          locations: [task.location],
+          locations: task.location ? [task.location] : [], // Empty = all UK
           postedWithin: 60, // Fetch last 60 days (minimum requirement)
           directEmployerOnly: true,
           limitPerSearch: 200,
@@ -194,7 +194,7 @@ export const processJobQueueFunction = inngest.createFunction(
       } else if (isAdzuna) {
         const jobs = await searchAdzunaMultipleKeywords({
           keywords: [task.keywords],
-          locations: [task.location],
+          locations: task.location ? [task.location] : [], // Empty = all UK
           maxDaysOld: 60, // Fetch last 60 days (minimum requirement)
         });
         return { source: 'adzuna', jobs };
@@ -404,11 +404,11 @@ export const processJobQueueFunction = inngest.createFunction(
       await logActivity({
         type: 'jobs_synced',
         title: 'Job queue processed',
-        detail: `${task.keywords} × ${task.location} (${processingStats.new_jobs} new, ${processingStats.updated_jobs} updated)`,
+        detail: `${task.keywords} × ${task.location || 'All UK'} (${processingStats.new_jobs} new, ${processingStats.updated_jobs} updated)`,
         metadata: {
           taskType: task.task_type,
           keywords: task.keywords,
-          location: task.location,
+          location: task.location || 'All UK',
           newJobs: processingStats.new_jobs,
           updatedJobs: processingStats.updated_jobs,
         },

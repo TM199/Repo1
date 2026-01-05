@@ -86,10 +86,11 @@ export async function getAdzunaJobCount(what: string, where: string): Promise<nu
 
 /**
  * Search Adzuna for jobs
+ * If where is empty/undefined, searches all UK without location filter
  */
 export async function searchAdzunaJobs(options: {
   what?: string;
-  where: string;
+  where?: string; // Optional - if not provided, searches all UK
   maxDaysOld?: number;
   resultsPerPage?: number;
   page?: number;
@@ -111,11 +112,12 @@ export async function searchAdzunaJobs(options: {
   const params = new URLSearchParams({
     app_id: appId,
     app_key: apiKey,
-    where: options.where,
     results_per_page: String(resultsPerPage),
     sort_by: options.sortBy || 'date',
   });
 
+  // Only add where param if location is specified
+  if (options.where) params.append('where', options.where);
   if (options.what) params.append('what', options.what);
   if (options.maxDaysOld) params.append('max_days_old', String(options.maxDaysOld));
   if (options.permanent) params.append('permanent', '1');
@@ -143,7 +145,7 @@ export async function searchAdzunaJobs(options: {
  */
 export async function fetchAllAdzunaResults(options: {
   what?: string;
-  where: string;
+  where?: string; // Optional - if not provided, searches all UK
   maxDaysOld?: number;
   maxResults?: number;
 }): Promise<AdzunaJob[]> {
@@ -199,6 +201,7 @@ export async function fetchAllAdzunaResults(options: {
  * Search Adzuna across multiple locations for a keyword
  * Sequential with rate limiting to avoid 429 errors
  * Limited to first page (50 results) per location to fit within timeout
+ * If locations is empty, searches all UK without location filter
  */
 export async function searchAdzunaForKeyword(options: {
   what?: string;
@@ -207,6 +210,34 @@ export async function searchAdzunaForKeyword(options: {
 }): Promise<AdzunaJob[]> {
   const allJobs: AdzunaJob[] = [];
   const seenJobIds = new Set<string>();
+
+  // If no locations specified, do a single search without location filter
+  if (options.locations.length === 0) {
+    try {
+      const response = await searchAdzunaJobs({
+        what: options.what,
+        // No where param = all UK
+        maxDaysOld: options.maxDaysOld || 60,
+        resultsPerPage: 50,
+        page: 1,
+      });
+
+      if (response.results) {
+        for (const job of response.results) {
+          if (!seenJobIds.has(job.id)) {
+            seenJobIds.add(job.id);
+            allJobs.push(job);
+          }
+        }
+      }
+
+      console.log(`[adzuna] searchAdzunaForKeyword("${options.what || 'all'}"): ${allJobs.length} jobs (all UK)`);
+      return allJobs;
+    } catch (error) {
+      console.error(`[adzuna] Search error (all UK):`, error);
+      return [];
+    }
+  }
 
   // Process locations sequentially to respect rate limits
   for (const location of options.locations) {
